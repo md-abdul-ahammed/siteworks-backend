@@ -43,6 +43,12 @@ model Customer {
   accountType        String? // 'checking' or 'savings'
   preferredCurrency  String?
   
+  // GoCardless Integration
+  goCardlessCustomerId String? // GoCardless customer ID
+  goCardlessBankAccountId String? // GoCardless customer bank account ID
+  goCardlessMandateId  String? // GoCardless mandate ID
+  mandateStatus        String? // active, pending_submission, submitted, active, failed, cancelled, expired
+  
   // Timestamps
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt

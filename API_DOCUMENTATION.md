@@ -63,7 +63,21 @@ Register a new user account.
 {
   "email": "user@example.com",
   "password": "SecurePassword123!",
-  "name": "John Doe"
+  "firstName": "John",
+  "lastName": "Doe",
+  "companyName": "Acme Corp",
+  "phone": "+1234567890",
+  "countryOfResidence": "GB",
+  "addressLine1": "123 Main Street",
+  "addressLine2": "Suite 100",
+  "city": "London",
+  "postcode": "SW1A 1AA",
+  "state": "England",
+  "accountHolderName": "John Doe",
+  "bankCode": "123456",
+  "accountNumber": "12345678",
+  "accountType": "checking",
+  "preferredCurrency": "GBP"
 }
 ```
 
@@ -71,21 +85,55 @@ Register a new user account.
 
 - Email: Valid email format, unique
 - Password: Minimum 8 characters, must contain uppercase, lowercase, number, and special character
-- Name: 2-50 characters
+- First Name: Required, 1-50 characters
+- Last Name: Required, 1-50 characters
+- Company Name: Optional, 2-100 characters
+- Phone: Optional, valid mobile phone format
+- Country of Residence: Required
+- Address Line 1: Required
+- Address Line 2: Optional
+- City: Required
+- Postcode: Required
+- State: Optional
+- Account Holder Name: Optional, 2-100 characters (for GoCardless integration)
+- Bank Code: Optional, 3-20 digits (for GoCardless integration)
+- Account Number: Optional, 8-20 digits (for GoCardless integration)
+- Account Type: Optional, 'checking' or 'savings' (for GoCardless integration)
+- Preferred Currency: Optional, valid currency code (for GoCardless integration)
 
 #### Response
 
 ```json
 {
   "success": true,
-  "message": "User registered successfully",
-  "user": {
-    "id": "user_id",
+  "message": "Customer registered successfully",
+  "customer": {
+    "id": "customer_id",
     "email": "user@example.com",
-    "name": "John Doe",
+    "firstName": "John",
+    "lastName": "Doe",
+    "companyName": "Acme Corp",
+    "phone": "+1234567890",
+    "countryOfResidence": "GB",
+    "addressLine1": "123 Main Street",
+    "addressLine2": "Suite 100",
+    "city": "London",
+    "postcode": "SW1A 1AA",
+    "state": "England",
     "isVerified": true,
     "isActive": true,
-    "createdAt": "2024-01-01T00:00:00.000Z"
+    "createdAt": "2024-01-01T00:00:00.000Z",
+    "goCardlessCustomerId": "CU123456789",
+    "goCardlessBankAccountId": "BA123456789",
+    "goCardlessMandateId": "MD123456789",
+    "mandateStatus": "pending_submission"
+  },
+  "gocardless": {
+    "integrated": true,
+    "customerId": "CU123456789",
+    "bankAccountId": "created",
+    "mandateId": "MD123456789",
+    "mandateStatus": "pending_submission"
   },
   "tokens": {
     "accessToken": "jwt_access_token",
@@ -356,6 +404,94 @@ When rate limit is exceeded:
   "timestamp": "2024-01-01T00:00:00.000Z"
 }
 ```
+
+### 15. GoCardless Status
+
+**GET** `/auth/gocardless-status`
+
+Get the current GoCardless integration status for the authenticated user.
+
+#### Headers
+
+```
+Authorization: Bearer <access_token>
+```
+
+#### Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "hasGoCardlessCustomer": true,
+    "hasBankAccount": true,
+    "hasMandate": true,
+    "customerId": "CU123456789",
+    "bankAccountId": "BA123456789",
+    "mandateId": "MD123456789",
+    "mandateStatus": "pending_submission",
+    "mandateDetails": {
+      "id": "MD123456789",
+      "status": "pending_submission",
+      "reference": "MANDATE-123-1704067200000",
+      "scheme": "bacs",
+      "created_at": "2024-01-01T00:00:00.000Z"
+    }
+  }
+}
+```
+
+### 16. Setup GoCardless Integration
+
+**POST** `/auth/setup-gocardless`
+
+Setup or retry GoCardless integration for an existing customer.
+
+#### Headers
+
+```
+Authorization: Bearer <access_token>
+```
+
+#### Request Body
+
+```json
+{
+  "accountHolderName": "John Doe",
+  "bankCode": "123456",
+  "accountNumber": "12345678",
+  "accountType": "checking"
+}
+```
+
+#### Validation Rules
+
+- Account Holder Name: Required, 2-100 characters
+- Bank Code: Required, 3-20 digits
+- Account Number: Required, 8-20 digits
+- Account Type: Optional, 'checking' or 'savings'
+
+#### Response
+
+```json
+{
+  "success": true,
+  "message": "GoCardless integration setup successfully",
+  "data": {
+    "customerId": "CU123456789",
+    "bankAccountId": "BA123456789",
+    "mandateId": "MD123456789",
+    "mandateStatus": "pending_submission"
+  }
+}
+```
+
+#### Error Responses
+
+- `400`: Validation error or already setup
+- `401`: Unauthorized
+- `404`: Customer not found
+- `500`: GoCardless setup failed
 
 ## Security Features
 
