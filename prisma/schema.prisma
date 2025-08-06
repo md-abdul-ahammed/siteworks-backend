@@ -49,6 +49,9 @@ model Customer {
   goCardlessMandateId  String? // GoCardless mandate ID
   mandateStatus        String? // active, pending_submission, submitted, active, failed, cancelled, expired
   
+  // OpenPhone Integration
+  openPhoneContactId   String? // OpenPhone contact ID
+  
   // Timestamps
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt

@@ -29,11 +29,17 @@ apiKey.apiKey = process.env.BREVO_API_KEY;
 const GoCardlessService = require('../services/gocardless');
 // Bank validation service
 const BankValidationService = require('../services/bankValidation');
+// OpenPhone service
+const OpenPhoneService = require('../services/openphone');
+// OpenPhone message service
+const OpenPhoneMessageService = require('../services/openphone-messages');
 
 const router = express.Router();
 const prisma = new PrismaClient();
 const goCardlessService = new GoCardlessService();
 const bankValidationService = new BankValidationService();
+const openPhoneService = new OpenPhoneService();
+const openPhoneMessageService = new OpenPhoneMessageService();
 
 // Validation middleware for user registration
 const validateRegistration = [
@@ -246,7 +252,8 @@ router.post('/register',
             goCardlessCustomerId: true,
             goCardlessBankAccountId: true,
             goCardlessMandateId: true,
-            mandateStatus: true
+            mandateStatus: true,
+            openPhoneContactId: true
           }
         });
 
@@ -332,6 +339,81 @@ router.post('/register',
         } else {
           console.log('Bank details not provided, skipping GoCardless integration');
           console.log('Customer can set up GoCardless later via /setup-gocardless endpoint');
+        }
+
+        // Create OpenPhone contact
+        let openPhoneContact = null;
+        try {
+          console.log('Creating OpenPhone contact for:', customer.email);
+          openPhoneContact = await openPhoneService.createContact({
+            firstName: customer.firstName,
+            lastName: customer.lastName,
+            email: customer.email,
+            phone: customer.phone,
+            companyName: customer.companyName,
+            notes: `Customer from SiteWorks - ID: ${customer.id}`
+          });
+
+          if (openPhoneContact) {
+            // Update customer with OpenPhone contact ID
+            await tx.customer.update({
+              where: { id: customer.id },
+              data: {
+                openPhoneContactId: openPhoneContact.id
+              }
+            });
+
+            // Update customer object for response
+            customer.openPhoneContactId = openPhoneContact.id;
+            console.log('OpenPhone contact created successfully:', openPhoneContact.id);
+            
+            // Send welcome message via OpenPhone
+            if (customer.phone) {
+              try {
+                console.log('Sending welcome message via OpenPhone to:', customer.phone);
+                const messageResult = await openPhoneMessageService.sendWelcomeMessage({
+                  firstName: customer.firstName,
+                  lastName: customer.lastName,
+                  email: customer.email,
+                  phone: customer.phone,
+                  companyName: customer.companyName
+                });
+                
+                if (messageResult) {
+                  console.log('Welcome message sent successfully via OpenPhone');
+                } else {
+                  console.log('Welcome message sending failed (OpenPhone not configured or failed)');
+                }
+              } catch (messageError) {
+                console.error('Failed to send welcome message via OpenPhone:', messageError);
+                // Don't fail registration if message fails
+              }
+            } else {
+              console.log('No phone number provided, skipping welcome message');
+            }
+          } else {
+            console.log('OpenPhone contact creation skipped (API not configured or failed)');
+            console.log('=== MANUAL OPENPHONE CONTACT CREATION REQUIRED ===');
+            console.log('Customer details for manual contact creation:');
+            console.log(`- Name: ${customer.firstName} ${customer.lastName}`);
+            console.log(`- Email: ${customer.email}`);
+            console.log(`- Phone: ${customer.phone || 'Not provided'}`);
+            console.log(`- Company: ${customer.companyName || 'Not provided'}`);
+            console.log(`- Notes: Customer from SiteWorks - ID: ${customer.id}`);
+            console.log('=== END MANUAL CONTACT CREATION ===');
+          }
+        } catch (openPhoneError) {
+          console.error('OpenPhone integration failed:', openPhoneError);
+          // Don't throw error, just log it - customer is still created
+          console.log('Customer registration completed without OpenPhone integration');
+          console.log('=== MANUAL OPENPHONE CONTACT CREATION REQUIRED ===');
+          console.log('Customer details for manual contact creation:');
+          console.log(`- Name: ${customer.firstName} ${customer.lastName}`);
+          console.log(`- Email: ${customer.email}`);
+          console.log(`- Phone: ${customer.phone || 'Not provided'}`);
+          console.log(`- Company: ${customer.companyName || 'Not provided'}`);
+          console.log(`- Notes: Customer from SiteWorks - ID: ${customer.id}`);
+          console.log('=== END MANUAL CONTACT CREATION ===');
         }
 
         console.log('Database transaction completed successfully');
@@ -425,6 +507,10 @@ router.post('/register',
           bankAccountId: customer.goCardlessBankAccountId || null,
           mandateId: customer.goCardlessMandateId || null,
           mandateStatus: customer.mandateStatus || null
+        },
+        openphone: {
+          integrated: !!customer.openPhoneContactId,
+          contactId: customer.openPhoneContactId || null
         },
         tokens: {
           accessToken: tokens.accessToken,
@@ -571,7 +657,8 @@ router.post('/signin',
         goCardlessCustomerId: customer.goCardlessCustomerId,
         goCardlessBankAccountId: customer.goCardlessBankAccountId,
         goCardlessMandateId: customer.goCardlessMandateId,
-        mandateStatus: customer.mandateStatus
+        mandateStatus: customer.mandateStatus,
+        openPhoneContactId: customer.openPhoneContactId
       };
 
       res.json({
@@ -619,7 +706,8 @@ router.get('/profile',
           goCardlessCustomerId: true,
           goCardlessBankAccountId: true,
           goCardlessMandateId: true,
-          mandateStatus: true
+          mandateStatus: true,
+          openPhoneContactId: true
         }
       });
 

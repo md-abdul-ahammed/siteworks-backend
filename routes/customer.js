@@ -24,10 +24,16 @@ const apiKey = defaultClient.authentications['api-key'];
 apiKey.apiKey = process.env.BREVO_API_KEY;
 // GoCardless service
 const GoCardlessService = require('../services/gocardless');
+// OpenPhone sync service
+const OpenPhoneSyncService = require('../services/openphone-sync');
+// OpenPhone message service
+const OpenPhoneMessageService = require('../services/openphone-messages');
 
 const router = express.Router();
 const prisma = new PrismaClient();
 const goCardlessService = new GoCardlessService();
+const openPhoneSyncService = new OpenPhoneSyncService();
+const openPhoneMessageService = new OpenPhoneMessageService();
 
 // Validation middleware for comprehensive customer registration
 const validateCustomerRegistration = [
@@ -473,7 +479,33 @@ router.put('/profile',
     body('phone')
       .optional()
       .isMobilePhone()
-      .withMessage('Please provide a valid phone number')
+      .withMessage('Please provide a valid phone number'),
+    // Address validation
+    body('address.line1')
+      .optional()
+      .trim()
+      .isLength({ min: 1, max: 200 })
+      .withMessage('Address line 1 must be between 1 and 200 characters'),
+    body('address.line2')
+      .optional()
+      .trim()
+      .isLength({ max: 200 })
+      .withMessage('Address line 2 must be less than 200 characters'),
+    body('address.city')
+      .optional()
+      .trim()
+      .isLength({ min: 1, max: 100 })
+      .withMessage('City must be between 1 and 100 characters'),
+    body('address.postcode')
+      .optional()
+      .trim()
+      .isLength({ min: 1, max: 20 })
+      .withMessage('Postcode must be between 1 and 20 characters'),
+    body('address.state')
+      .optional()
+      .trim()
+      .isLength({ max: 100 })
+      .withMessage('State must be less than 100 characters')
   ],
   async (req, res, next) => {
     try {
@@ -487,7 +519,7 @@ router.put('/profile',
         });
       }
 
-      const { firstName, lastName, companyName, email, phone } = req.body;
+      const { firstName, lastName, companyName, email, phone, address } = req.body;
 
       // Check if email is being updated and if it's already taken by another user
       if (email && email !== req.user.email) {
@@ -518,14 +550,27 @@ router.put('/profile',
           city: true,
           postcode: true,
           state: true,
-          goCardlessCustomerId: true
+          goCardlessCustomerId: true,
+          openPhoneContactId: true
         }
       });
+
+      // Prepare update data
+      const updateData = { firstName, lastName, companyName, email, phone };
+      
+      // Add address fields if provided
+      if (address) {
+        if (address.line1) updateData.addressLine1 = address.line1;
+        if (address.line2 !== undefined) updateData.addressLine2 = address.line2;
+        if (address.city) updateData.city = address.city;
+        if (address.postcode) updateData.postcode = address.postcode;
+        if (address.state !== undefined) updateData.state = address.state;
+      }
 
       // Update customer in database
       const updatedCustomer = await prisma.customer.update({
         where: { id: req.user.id },
-        data: { firstName, lastName, companyName, email, phone },
+        data: updateData,
         select: {
           id: true,
           email: true,
@@ -547,7 +592,8 @@ router.put('/profile',
           goCardlessCustomerId: true,
           goCardlessBankAccountId: true,
           goCardlessMandateId: true,
-          mandateStatus: true
+          mandateStatus: true,
+          openPhoneContactId: true
         }
       });
 
@@ -582,11 +628,66 @@ router.put('/profile',
         }
       }
 
+      // Check if phone number changed
+      const phoneChanged = currentCustomer.phone !== updatedCustomer.phone;
+      const oldPhone = currentCustomer.phone;
+      const newPhone = updatedCustomer.phone;
+
+      // Sync with OpenPhone
+      try {
+        console.log('Syncing profile update with OpenPhone for customer:', req.user.id);
+        
+        // Prepare customer data for OpenPhone sync
+        const openPhoneCustomerData = {
+          email: updatedCustomer.email,
+          firstName: updatedCustomer.firstName,
+          lastName: updatedCustomer.lastName,
+          companyName: updatedCustomer.companyName,
+          phone: updatedCustomer.phone,
+          openPhoneContactId: updatedCustomer.openPhoneContactId,
+          addressLine1: updatedCustomer.addressLine1,
+          addressLine2: updatedCustomer.addressLine2,
+          city: updatedCustomer.city,
+          postcode: updatedCustomer.postcode,
+          state: updatedCustomer.state
+        };
+
+        const openPhoneResult = await openPhoneSyncService.syncProfileUpdate(req.user.id, openPhoneCustomerData);
+        console.log('OpenPhone sync result:', openPhoneResult ? 'Success' : 'Failed');
+      } catch (openPhoneError) {
+        console.error('Failed to sync with OpenPhone:', openPhoneError);
+        // Don't fail the entire request if OpenPhone sync fails
+        // The database update was successful, so we'll return success but log the OpenPhone error
+      }
+
+      // Send phone update message if phone number changed
+      let phoneUpdateMessageSent = false;
+      if (phoneChanged && newPhone) {
+        try {
+          console.log('Phone number changed, sending update message to:', newPhone);
+          
+          const messageResult = await openPhoneMessageService.sendPhoneUpdateMessage(
+            updatedCustomer,
+            oldPhone,
+            newPhone
+          );
+          
+          phoneUpdateMessageSent = !!messageResult;
+          console.log('Phone update message result:', phoneUpdateMessageSent ? 'Sent' : 'Failed');
+        } catch (messageError) {
+          console.error('Failed to send phone update message:', messageError);
+          // Don't fail the entire request if message sending fails
+        }
+      }
+
       res.json({
         success: true,
         message: 'Profile updated successfully',
         customer: updatedCustomer,
-        gocardlessUpdated: !!currentCustomer.goCardlessCustomerId
+        gocardlessUpdated: !!currentCustomer.goCardlessCustomerId,
+        openPhoneSynced: true,
+        phoneChanged: phoneChanged,
+        phoneUpdateMessageSent: phoneUpdateMessageSent
       });
 
     } catch (error) {
