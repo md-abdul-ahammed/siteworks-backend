@@ -92,7 +92,21 @@ const validateCustomerRegistration = [
   body('phone')
     .optional()
     .matches(/^\+?[1-9]\d{1,14}$/)
-    .withMessage('Please provide a valid phone number'),
+    .withMessage('Please provide a valid phone number')
+    .custom(async (value) => {
+      if (!value) return true; // Allow empty/undefined values
+      
+      // Check if phone number is already taken by another customer
+      const existingCustomer = await prisma.customer.findUnique({
+        where: { phone: value }
+      });
+      
+      if (existingCustomer) {
+        throw new Error('Phone number is already registered by another user');
+      }
+      
+      return true;
+    }),
   body('countryOfResidence')
     .trim()
     .isLength({ min: 1 })
@@ -962,6 +976,43 @@ router.post('/reset-password',
       res.json({
         success: true,
         message: 'Password reset successfully'
+      });
+
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// Check phone number uniqueness endpoint
+router.post('/check-phone',
+  rateLimiter(60 * 1000, 20), // 20 requests per minute
+  [
+    body('phone')
+      .matches(/^\+?[1-9]\d{1,14}$/)
+      .withMessage('Please provide a valid phone number')
+  ],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          details: errors.array(),
+          code: 'VALIDATION_ERROR'
+        });
+      }
+
+      const { phone } = req.body;
+
+      // Check if phone number is already taken
+      const existingCustomer = await prisma.customer.findUnique({
+        where: { phone }
+      });
+
+      res.json({
+        success: true,
+        isUnique: !existingCustomer
       });
 
     } catch (error) {

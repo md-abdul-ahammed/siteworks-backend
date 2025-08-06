@@ -26,7 +26,7 @@ model Customer {
   firstName   String
   lastName    String
   companyName String?
-  phone       String?
+  phone       String?  @unique
   
   // Address Information
   countryOfResidence String

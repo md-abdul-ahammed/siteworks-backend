@@ -66,10 +66,27 @@ const validateCustomerRegistration = [
       }
       return true;
     }),
-  body('phone')
-    .optional()
-    .isMobilePhone()
-    .withMessage('Please provide a valid phone number'),
+      body('phone')
+      .optional()
+      .isMobilePhone()
+      .withMessage('Please provide a valid phone number')
+      .custom(async (value, { req }) => {
+        if (!value) return true; // Allow empty/undefined values
+        
+        // Check if phone number is already taken by another customer (excluding current user)
+        const existingCustomer = await prisma.customer.findFirst({
+          where: { 
+            phone: value,
+            id: { not: req.user.id }
+          }
+        });
+        
+        if (existingCustomer) {
+          throw new Error('Phone number is already registered by another user');
+        }
+        
+        return true;
+      }),
   body('countryOfResidence')
     .trim()
     .isLength({ min: 1 })
@@ -479,7 +496,21 @@ router.put('/profile',
     body('phone')
       .optional()
       .isMobilePhone()
-      .withMessage('Please provide a valid phone number'),
+      .withMessage('Please provide a valid phone number')
+      .custom(async (value) => {
+        if (!value) return true; // Allow empty/undefined values
+        
+        // Check if phone number is already taken by another customer
+        const existingCustomer = await prisma.customer.findUnique({
+          where: { phone: value }
+        });
+        
+        if (existingCustomer) {
+          throw new Error('Phone number is already registered by another user');
+        }
+        
+        return true;
+      }),
     // Address validation
     body('address.line1')
       .optional()
