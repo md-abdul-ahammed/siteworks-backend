@@ -1,0 +1,81 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Customer {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  password    String?
+  isVerified  Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  lastLoginAt DateTime?
+  
+  // Personal Information
+  firstName   String
+  lastName    String
+  companyName String?
+  phone       String?
+  
+  // Address Information
+  countryOfResidence String
+  addressLine1       String
+  addressLine2       String?
+  city               String
+  postcode           String
+  state              String? // For US states
+  
+  // Bank Details (will be console logged, not stored)
+  accountHolderName  String?
+  bankCode           String?
+  accountNumber      String?
+  accountType        String? // 'checking' or 'savings'
+  preferredCurrency  String?
+  
+  // Timestamps
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  // Relations
+  refreshTokens RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+
+  @@map("customers")
+}
+
+model RefreshToken {
+  id          String   @id @default(cuid())
+  token       String   @unique
+  customerId  String
+  expiresAt   DateTime
+  isRevoked   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  
+  @@map("refresh_tokens")
+}
+
+model PasswordResetToken {
+  id          String   @id @default(cuid())
+  token       String   @unique
+  customerId  String
+  expiresAt   DateTime
+  isUsed      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  
+  @@map("password_reset_tokens")
+}
