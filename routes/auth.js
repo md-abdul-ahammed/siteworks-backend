@@ -113,6 +113,17 @@ const validateCustomerRegistration = [
     .withMessage('State must be at least 1 character')
 ];
 
+// Validation middleware for login
+const validateLogin = [
+  body('email')
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Please provide a valid email address'),
+  body('password')
+    .notEmpty()
+    .withMessage('Password is required')
+];
+
 // Register new customer with comprehensive details
 router.post('/register', 
   rateLimiter(15 * 60 * 1000, 5), // 5 requests per 15 minutes
@@ -477,6 +488,432 @@ router.post('/validate-bank-details',
         suggestions: bankValidationResult.suggestions,
         formattedBankCode: bankValidationService.formatBankCode(bankCode, countryCode),
         maskedAccountNumber: bankValidationService.maskAccountNumber(accountNumber)
+      });
+
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// Login customer
+router.post('/signin',
+  rateLimiter(15 * 60 * 1000, 10), // 10 requests per 15 minutes
+  validateLogin,
+  async (req, res, next) => {
+    try {
+      // Check for validation errors
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          details: errors.array(),
+          code: 'VALIDATION_ERROR'
+        });
+      }
+
+      const { email, password } = req.body;
+
+      // Find customer
+      const customer = await prisma.customer.findUnique({
+        where: { email }
+      });
+
+      if (!customer) {
+        return res.status(401).json({
+          error: 'Invalid email or password',
+          code: 'INVALID_CREDENTIALS'
+        });
+      }
+
+      // Check if customer is active
+      if (!customer.isActive) {
+        return res.status(401).json({
+          error: 'Account is deactivated',
+          code: 'ACCOUNT_DEACTIVATED'
+        });
+      }
+
+      // Verify password
+      const isPasswordValid = await comparePassword(password, customer.password);
+      if (!isPasswordValid) {
+        return res.status(401).json({
+          error: 'Invalid email or password',
+          code: 'INVALID_CREDENTIALS'
+        });
+      }
+
+      // Update last login time
+      await updateLastLogin(customer.id);
+
+      // Generate tokens
+      const tokens = await generateTokenPair(customer.id);
+
+      // Return customer data (excluding password)
+      const customerData = {
+        id: customer.id,
+        email: customer.email,
+        firstName: customer.firstName,
+        lastName: customer.lastName,
+        companyName: customer.companyName,
+        phone: customer.phone,
+        countryOfResidence: customer.countryOfResidence,
+        addressLine1: customer.addressLine1,
+        addressLine2: customer.addressLine2,
+        city: customer.city,
+        postcode: customer.postcode,
+        state: customer.state,
+        isVerified: customer.isVerified,
+        isActive: customer.isActive,
+        lastLoginAt: customer.lastLoginAt,
+        createdAt: customer.createdAt,
+        updatedAt: customer.updatedAt,
+        goCardlessCustomerId: customer.goCardlessCustomerId,
+        goCardlessBankAccountId: customer.goCardlessBankAccountId,
+        goCardlessMandateId: customer.goCardlessMandateId,
+        mandateStatus: customer.mandateStatus
+      };
+
+      res.json({
+        success: true,
+        message: 'Login successful',
+        customer: customerData,
+        tokens: {
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          expiresAt: tokens.expiresAt
+        }
+      });
+
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// Get current user profile
+router.get('/profile',
+  verifyToken,
+  async (req, res, next) => {
+    try {
+      const customer = await prisma.customer.findUnique({
+        where: { id: req.user.id },
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          companyName: true,
+          phone: true,
+          countryOfResidence: true,
+          addressLine1: true,
+          addressLine2: true,
+          city: true,
+          postcode: true,
+          state: true,
+          isVerified: true,
+          isActive: true,
+          lastLoginAt: true,
+          createdAt: true,
+          updatedAt: true,
+          goCardlessCustomerId: true,
+          goCardlessBankAccountId: true,
+          goCardlessMandateId: true,
+          mandateStatus: true
+        }
+      });
+
+      if (!customer) {
+        return res.status(404).json({
+          error: 'Customer not found',
+          code: 'CUSTOMER_NOT_FOUND'
+        });
+      }
+
+      res.json({
+        success: true,
+        customer: customer
+      });
+
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// Logout endpoint
+router.post('/logout',
+  verifyToken,
+  async (req, res, next) => {
+    try {
+      const { refreshToken } = req.body;
+      
+      if (refreshToken) {
+        await revokeRefreshToken(refreshToken);
+      }
+
+      res.json({
+        success: true,
+        message: 'Logged out successfully'
+      });
+
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// Logout from all devices
+router.post('/logout-all',
+  verifyToken,
+  async (req, res, next) => {
+    try {
+      await revokeAllUserTokens(req.user.id);
+
+      res.json({
+        success: true,
+        message: 'Logged out from all devices successfully'
+      });
+
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// Refresh access token
+router.post('/refresh',
+  rateLimiter(15 * 60 * 1000, 20), // 20 requests per 15 minutes
+  async (req, res, next) => {
+    try {
+      const { refreshToken } = req.body;
+
+      if (!refreshToken) {
+        return res.status(400).json({
+          error: 'Refresh token is required',
+          code: 'MISSING_REFRESH_TOKEN'
+        });
+      }
+
+      // Verify refresh token
+      const decoded = await verifyRefreshToken(refreshToken);
+      
+      // Generate new token pair
+      const tokens = await generateTokenPair(decoded.customerId);
+
+      res.json({
+        success: true,
+        message: 'Token refreshed successfully',
+        tokens: {
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          expiresAt: tokens.expiresAt
+        }
+      });
+
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// Forgot password endpoint
+router.post('/forgot-password',
+  rateLimiter(15 * 60 * 1000, 5), // 5 requests per 15 minutes
+  [
+    body('email')
+      .isEmail()
+      .normalizeEmail()
+      .withMessage('Please provide a valid email address')
+  ],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          details: errors.array(),
+          code: 'VALIDATION_ERROR'
+        });
+      }
+
+      const { email } = req.body;
+
+      // Check if customer exists
+      const customer = await prisma.customer.findUnique({
+        where: { email }
+      });
+
+      if (!customer) {
+        // Don't reveal if email exists or not for security
+        return res.json({
+          success: true,
+          message: 'If an account with this email exists, a password reset link has been sent.'
+        });
+      }
+
+      // Generate password reset token
+      const resetToken = await generatePasswordResetTokenForCustomer(customer.id);
+
+      // Send password reset email
+      const customerName = `${customer.firstName} ${customer.lastName}`.trim() || customer.email;
+      
+      setImmediate(async () => {
+        try {
+          const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
+          
+          const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
+          sendSmtpEmail.subject = "Password Reset Request - SiteWorks";
+          sendSmtpEmail.htmlContent = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <meta charset="utf-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>Password Reset - SiteWorks</title>
+              <style>
+                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                .header { background-color: #f8f9fa; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+                .content { background-color: #ffffff; padding: 30px; border: 1px solid #e9ecef; }
+                .button { display: inline-block; background-color: #dc3545; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+                .footer { background-color: #f8f9fa; padding: 20px; text-align: center; border-radius: 0 0 8px 8px; font-size: 14px; color: #6c757d; }
+              </style>
+            </head>
+            <body>
+              <div class="container">
+                <div class="header">
+                  <h1>Password Reset Request</h1>
+                </div>
+                <div class="content">
+                  <p>Hello ${customerName},</p>
+                  
+                  <p>We received a request to reset your password for your SiteWorks account.</p>
+                  
+                  <p>If you didn't make this request, you can safely ignore this email.</p>
+                  
+                  <div style="text-align: center;">
+                    <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}" class="button">Reset Password</a>
+                  </div>
+                  
+                  <p>This link will expire in 1 hour for security reasons.</p>
+                  
+                  <p>If you have any questions, please contact our support team.</p>
+                  
+                  <p>Best regards,<br>The SiteWorks Team</p>
+                </div>
+                <div class="footer">
+                  <p>This is an automated message, please do not reply directly to this email.</p>
+                </div>
+              </div>
+            </body>
+            </html>
+          `;
+          sendSmtpEmail.sender = { email: process.env.BREVO_FROM_EMAIL || 'noreply@siteworks.com', name: 'SiteWorks Team' };
+          sendSmtpEmail.to = [{ email: customer.email, name: customerName }];
+
+          await apiInstance.sendTransacEmail(sendSmtpEmail);
+          console.log('Password reset email sent successfully to:', customer.email);
+        } catch (emailError) {
+          console.error('Failed to send password reset email:', emailError);
+        }
+      });
+
+      res.json({
+        success: true,
+        message: 'If an account with this email exists, a password reset link has been sent.'
+      });
+
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// Reset password endpoint
+router.post('/reset-password',
+  rateLimiter(15 * 60 * 1000, 5), // 5 requests per 15 minutes
+  [
+    body('token')
+      .notEmpty()
+      .withMessage('Reset token is required'),
+    body('newPassword')
+      .isLength({ min: 8 })
+      .withMessage('Password must be at least 8 characters long')
+      .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
+      .withMessage('Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character')
+  ],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          details: errors.array(),
+          code: 'VALIDATION_ERROR'
+        });
+      }
+
+      const { token, newPassword } = req.body;
+
+      // Verify reset token
+      const customerData = await verifyPasswordResetToken(token);
+      
+      // Hash new password
+      const hashedPassword = await hashPassword(newPassword);
+      
+      // Update customer password
+      await prisma.customer.update({
+        where: { id: customerData.customerId },
+        data: { password: hashedPassword }
+      });
+
+      // Mark token as used
+      await markPasswordResetTokenAsUsed(token);
+
+      res.json({
+        success: true,
+        message: 'Password reset successfully'
+      });
+
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// Verify reset token endpoint
+router.post('/verify-reset-token',
+  rateLimiter(15 * 60 * 1000, 10), // 10 requests per 15 minutes
+  [
+    body('token')
+      .notEmpty()
+      .withMessage('Reset token is required')
+  ],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          details: errors.array(),
+          code: 'VALIDATION_ERROR'
+        });
+      }
+
+      const { token } = req.body;
+
+      // Verify reset token
+      const customerData = await verifyPasswordResetToken(token);
+
+      res.json({
+        success: true,
+        message: 'Reset token is valid',
+        customer: {
+          email: customerData.email,
+          firstName: customerData.firstName,
+          lastName: customerData.lastName
+        }
       });
 
     } catch (error) {

@@ -371,6 +371,54 @@ class GoCardlessService {
       throw new Error(`Failed to list GoCardless mandates: ${error.message}`);
     }
   }
+
+  /**
+   * Update a GoCardless customer
+   * @param {string} customerId - GoCardless customer ID
+   * @param {Object} customerData - Updated customer information
+   * @param {string} customerData.email - Customer email
+   * @param {string} customerData.firstName - Customer first name
+   * @param {string} customerData.lastName - Customer last name
+   * @param {string} customerData.companyName - Company name (optional)
+   * @param {string} customerData.phone - Phone number (optional)
+   * @param {string} customerData.countryOfResidence - Country code (e.g., 'GB')
+   * @param {Object} customerData.address - Address object
+   * @param {string} customerData.address.line1 - Address line 1
+   * @param {string} customerData.address.line2 - Address line 2 (optional)
+   * @param {string} customerData.address.city - City
+   * @param {string} customerData.address.postcode - Postcode
+   * @param {string} customerData.address.state - State (optional)
+   * @returns {Promise<Object>} Updated GoCardless customer object
+   */
+  async updateCustomer(customerId, customerData) {
+    try {
+      const updatePayload = {
+        email: customerData.email,
+        given_name: customerData.firstName,
+        family_name: customerData.lastName,
+        company_name: customerData.companyName || undefined,
+        phone_number: customerData.phone || undefined,
+        country_code: customerData.countryOfResidence,
+        address_line1: customerData.address.line1,
+        address_line2: customerData.address.line2 || undefined,
+        city: customerData.address.city,
+        postal_code: customerData.address.postcode,
+        region: customerData.address.state || undefined,
+        language: 'en' // Default to English
+      };
+
+      console.log('Updating GoCardless customer with payload:', updatePayload);
+
+      const customer = await this.client.customers.update(customerId, updatePayload);
+
+      console.log('GoCardless customer updated successfully:', customer.id);
+      return customer;
+
+    } catch (error) {
+      console.error('Error updating GoCardless customer:', error);
+      throw new Error(`Failed to update GoCardless customer: ${error.message}`);
+    }
+  }
 }
 
 module.exports = GoCardlessService;

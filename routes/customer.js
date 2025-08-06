@@ -456,8 +456,20 @@ router.put('/profile',
     body('companyName')
       .optional()
       .trim()
-      .isLength({ min: 1, max: 100 })
-      .withMessage('Company name must be between 1 and 100 characters'),
+      .custom((value) => {
+        if (value === undefined || value === null || value === '') {
+          return true; // Allow empty/undefined values
+        }
+        if (value.length < 1 || value.length > 100) {
+          throw new Error('Company name must be between 1 and 100 characters');
+        }
+        return true;
+      }),
+    body('email')
+      .optional()
+      .isEmail()
+      .normalizeEmail()
+      .withMessage('Please provide a valid email address'),
     body('phone')
       .optional()
       .isMobilePhone()
@@ -475,11 +487,45 @@ router.put('/profile',
         });
       }
 
-      const { firstName, lastName, companyName, phone } = req.body;
+      const { firstName, lastName, companyName, email, phone } = req.body;
 
+      // Check if email is being updated and if it's already taken by another user
+      if (email && email !== req.user.email) {
+        const existingCustomer = await prisma.customer.findUnique({
+          where: { email }
+        });
+        
+        if (existingCustomer && existingCustomer.id !== req.user.id) {
+          return res.status(409).json({
+            error: 'Email is already taken by another user',
+            code: 'EMAIL_TAKEN'
+          });
+        }
+      }
+
+      // Get current customer data to check if we need to update GoCardless
+      const currentCustomer = await prisma.customer.findUnique({
+        where: { id: req.user.id },
+        select: {
+          email: true,
+          firstName: true,
+          lastName: true,
+          companyName: true,
+          phone: true,
+          countryOfResidence: true,
+          addressLine1: true,
+          addressLine2: true,
+          city: true,
+          postcode: true,
+          state: true,
+          goCardlessCustomerId: true
+        }
+      });
+
+      // Update customer in database
       const updatedCustomer = await prisma.customer.update({
         where: { id: req.user.id },
-        data: { firstName, lastName, companyName, phone },
+        data: { firstName, lastName, companyName, email, phone },
         select: {
           id: true,
           email: true,
@@ -505,10 +551,42 @@ router.put('/profile',
         }
       });
 
+      // Update GoCardless customer if they have a GoCardless customer ID
+      if (currentCustomer.goCardlessCustomerId) {
+        try {
+          console.log('Updating GoCardless customer:', currentCustomer.goCardlessCustomerId);
+          
+          // Prepare customer data for GoCardless update
+          const goCardlessCustomerData = {
+            email: updatedCustomer.email,
+            firstName: updatedCustomer.firstName,
+            lastName: updatedCustomer.lastName,
+            companyName: updatedCustomer.companyName,
+            phone: updatedCustomer.phone,
+            countryOfResidence: updatedCustomer.countryOfResidence,
+            address: {
+              line1: updatedCustomer.addressLine1,
+              line2: updatedCustomer.addressLine2,
+              city: updatedCustomer.city,
+              postcode: updatedCustomer.postcode,
+              state: updatedCustomer.state
+            }
+          };
+
+          await goCardlessService.updateCustomer(currentCustomer.goCardlessCustomerId, goCardlessCustomerData);
+          console.log('GoCardless customer updated successfully');
+        } catch (goCardlessError) {
+          console.error('Failed to update GoCardless customer:', goCardlessError);
+          // Don't fail the entire request if GoCardless update fails
+          // The database update was successful, so we'll return success but log the GoCardless error
+        }
+      }
+
       res.json({
         success: true,
         message: 'Profile updated successfully',
-        customer: updatedCustomer
+        customer: updatedCustomer,
+        gocardlessUpdated: !!currentCustomer.goCardlessCustomerId
       });
 
     } catch (error) {
@@ -744,6 +822,74 @@ router.get('/gocardless-status',
             created_at: mandateDetails.created_at
           } : null
         }
+      });
+
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// Change password endpoint
+router.put('/change-password',
+  verifyToken,
+  [
+    body('currentPassword')
+      .notEmpty()
+      .withMessage('Current password is required'),
+    body('newPassword')
+      .isLength({ min: 8 })
+      .withMessage('Password must be at least 8 characters long')
+      .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
+      .withMessage('Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character')
+  ],
+  async (req, res, next) => {
+    try {
+      // Check for validation errors
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          details: errors.array(),
+          code: 'VALIDATION_ERROR'
+        });
+      }
+
+      const { currentPassword, newPassword } = req.body;
+
+      // Get current customer
+      const customer = await prisma.customer.findUnique({
+        where: { id: req.user.id }
+      });
+
+      if (!customer) {
+        return res.status(404).json({
+          error: 'Customer not found',
+          code: 'CUSTOMER_NOT_FOUND'
+        });
+      }
+
+      // Verify current password
+      const isCurrentPasswordValid = await comparePassword(currentPassword, customer.password);
+      if (!isCurrentPasswordValid) {
+        return res.status(401).json({
+          error: 'Current password is incorrect',
+          code: 'INVALID_CURRENT_PASSWORD'
+        });
+      }
+
+      // Hash new password
+      const hashedNewPassword = await hashPassword(newPassword);
+
+      // Update password
+      await prisma.customer.update({
+        where: { id: req.user.id },
+        data: { password: hashedNewPassword }
+      });
+
+      res.json({
+        success: true,
+        message: 'Password changed successfully'
       });
 
     } catch (error) {
