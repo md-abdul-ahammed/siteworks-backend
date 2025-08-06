@@ -51,8 +51,15 @@ const validateCustomerRegistration = [
   body('companyName')
     .optional()
     .trim()
-    .isLength({ min: 2, max: 100 })
-    .withMessage('Company name must be between 2 and 100 characters'),
+    .custom((value) => {
+      if (value === undefined || value === null || value === '') {
+        return true; // Allow empty/undefined values
+      }
+      if (value.length < 2 || value.length > 100) {
+        throw new Error('Company name must be between 2 and 100 characters');
+      }
+      return true;
+    }),
   body('phone')
     .optional()
     .isMobilePhone()

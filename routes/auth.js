@@ -74,8 +74,15 @@ const validateCustomerRegistration = [
   body('companyName')
     .optional()
     .trim()
-    .isLength({ min: 2, max: 100 })
-    .withMessage('Company name must be between 2 and 100 characters'),
+    .custom((value) => {
+      if (value === undefined || value === null || value === '') {
+        return true; // Allow empty/undefined values
+      }
+      if (value.length < 2 || value.length > 100) {
+        throw new Error('Company name must be between 2 and 100 characters');
+      }
+      return true;
+    }),
   body('phone')
     .optional()
     .matches(/^\+?[1-9]\d{1,14}$/)
@@ -176,6 +183,7 @@ router.post('/register',
         }
       }
 
+      console.log('Starting database transaction...');
       // Use Prisma transaction for data consistency
       const result = await prisma.$transaction(async (tx) => {
         // Check if customer already exists
@@ -315,78 +323,87 @@ router.post('/register',
           console.log('Customer can set up GoCardless later via /setup-gocardless endpoint');
         }
 
+        console.log('Database transaction completed successfully');
         return { customer, bankValidation: bankValidationResult };
       }, {
-        maxWait: 10000, // 10 seconds max wait
-        timeout: 30000  // 30 seconds timeout
+        maxWait: 5000, // 5 seconds max wait
+        timeout: 15000  // 15 seconds timeout
       });
 
       // Extract results from transaction
       const { customer, bankValidation } = result;
+      console.log('Extracted customer data from transaction');
 
       // Generate tokens
+      console.log('Generating authentication tokens...');
       const tokens = await generateTokenPair(customer.id);
+      console.log('Authentication tokens generated successfully');
 
-      // Send welcome email
+      // Send welcome email asynchronously to avoid timeout
       const customerName = `${customer.firstName} ${customer.lastName}`.trim() || customer.email;
-      try {
-        const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
-        
-        const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
-        sendSmtpEmail.subject = "Welcome to SiteWorks!";
-        sendSmtpEmail.htmlContent = `
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Welcome to SiteWorks</title>
-            <style>
-              body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-              .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-              .header { background-color: #f8f9fa; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
-              .content { background-color: #ffffff; padding: 30px; border: 1px solid #e9ecef; }
-              .button { display: inline-block; background-color: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
-              .footer { background-color: #f8f9fa; padding: 20px; text-align: center; border-radius: 0 0 8px 8px; font-size: 14px; color: #6c757d; }
-            </style>
-          </head>
-          <body>
-            <div class="container">
-              <div class="header">
-                <h1>Welcome to SiteWorks!</h1>
-              </div>
-              <div class="content">
-                <p>Hello ${customerName},</p>
-                
-                <p>Welcome to SiteWorks! We're excited to have you on board.</p>
-                
-                <p>Your account has been successfully created and you can now access all our services.</p>
-                
-                <div style="text-align: center;">
-                  <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard" class="button">Access Your Dashboard</a>
+      
+      // Send email in background without blocking the response
+      setImmediate(async () => {
+        try {
+          const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
+          
+          const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
+          sendSmtpEmail.subject = "Welcome to SiteWorks!";
+          sendSmtpEmail.htmlContent = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <meta charset="utf-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>Welcome to SiteWorks</title>
+              <style>
+                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                .header { background-color: #f8f9fa; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+                .content { background-color: #ffffff; padding: 30px; border: 1px solid #e9ecef; }
+                .button { display: inline-block; background-color: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+                .footer { background-color: #f8f9fa; padding: 20px; text-align: center; border-radius: 0 0 8px 8px; font-size: 14px; color: #6c757d; }
+              </style>
+            </head>
+            <body>
+              <div class="container">
+                <div class="header">
+                  <h1>Welcome to SiteWorks!</h1>
                 </div>
-                
-                <p>If you have any questions or need assistance, please don't hesitate to contact our support team.</p>
-                
-                <p>Best regards,<br>The SiteWorks Team</p>
+                <div class="content">
+                  <p>Hello ${customerName},</p>
+                  
+                  <p>Welcome to SiteWorks! We're excited to have you on board.</p>
+                  
+                  <p>Your account has been successfully created and you can now access all our services.</p>
+                  
+                  <div style="text-align: center;">
+                    <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard" class="button">Access Your Dashboard</a>
+                  </div>
+                  
+                  <p>If you have any questions or need assistance, please don't hesitate to contact our support team.</p>
+                  
+                  <p>Best regards,<br>The SiteWorks Team</p>
+                </div>
+                <div class="footer">
+                  <p>This is an automated message, please do not reply directly to this email.</p>
+                </div>
               </div>
-              <div class="footer">
-                <p>This is an automated message, please do not reply directly to this email.</p>
-              </div>
-            </div>
-          </body>
-          </html>
-        `;
-        sendSmtpEmail.sender = { email: process.env.BREVO_FROM_EMAIL || 'noreply@siteworks.com', name: 'SiteWorks Team' };
-        sendSmtpEmail.to = [{ email: customer.email, name: customerName }];
+            </body>
+            </html>
+          `;
+          sendSmtpEmail.sender = { email: process.env.BREVO_FROM_EMAIL || 'noreply@siteworks.com', name: 'SiteWorks Team' };
+          sendSmtpEmail.to = [{ email: customer.email, name: customerName }];
 
-        await apiInstance.sendTransacEmail(sendSmtpEmail);
-        console.log('Welcome email sent successfully to:', customer.email);
-      } catch (emailError) {
-        console.error('Failed to send welcome email:', emailError);
-        // Don't fail registration if email fails
-      }
+          await apiInstance.sendTransacEmail(sendSmtpEmail);
+          console.log('Welcome email sent successfully to:', customer.email);
+        } catch (emailError) {
+          console.error('Failed to send welcome email:', emailError);
+          // Don't fail registration if email fails
+        }
+      });
 
+      console.log('Sending successful response to client...');
       res.status(201).json({
         success: true,
         message: 'Customer registered successfully',
@@ -404,6 +421,7 @@ router.post('/register',
           expiresAt: tokens.expiresAt
         }
       });
+      console.log('Response sent successfully');
 
     } catch (error) {
       if (error.message === 'Customer with this email already exists') {
