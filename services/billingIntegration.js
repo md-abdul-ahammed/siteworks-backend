@@ -7,6 +7,10 @@ class BillingIntegrationService {
     this.prisma = new PrismaClient();
     this.goCardlessService = new GoCardlessService();
     this.zohoService = new ZohoService();
+    
+    // Add cache for sync operations
+    this.syncCache = new Map();
+    this.CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
   }
 
   /**
@@ -198,6 +202,15 @@ class BillingIntegrationService {
     try {
       console.log('🔄 Syncing billing data for customer:', customerId);
 
+      // Check cache first
+      const cacheKey = `sync-${customerId}`;
+      const cachedResult = this.syncCache.get(cacheKey);
+      
+      if (cachedResult && (Date.now() - cachedResult.timestamp) < this.CACHE_DURATION) {
+        console.log('📋 Returning cached sync result for customer:', customerId);
+        return cachedResult.data;
+      }
+
       const customer = await this.prisma.customer.findUnique({
         where: { id: customerId },
         include: {
@@ -267,34 +280,48 @@ class BillingIntegrationService {
 
       // Sync GoCardless payments
       if (customer.goCardlessMandateId) {
-        const goCardlessPayments = await this.goCardlessService.listPayments(customer.goCardlessMandateId);
-        
-        for (const payment of goCardlessPayments) {
-          // Check if payment already exists in our database
-          const existingBilling = await this.prisma.billingHistory.findFirst({
-            where: { goCardlessPaymentId: payment.id }
-          });
-
-          if (!existingBilling) {
-            // Create new billing record
-            await this.prisma.billingHistory.create({
-              data: {
-                customerId: customer.id,
-                goCardlessPaymentId: payment.id,
-                amount: payment.amount / 100, // Convert from pence
-                currency: payment.currency,
-                status: payment.status,
-                description: payment.description,
-                dueDate: new Date(payment.charge_date),
-                paidAt: payment.status === 'confirmed' ? new Date(payment.charge_date) : null
-              }
+        try {
+          const goCardlessPayments = await this.goCardlessService.listPayments(customer.goCardlessMandateId);
+          
+          // Ensure goCardlessPayments is an array
+          const payments = Array.isArray(goCardlessPayments) ? goCardlessPayments : (goCardlessPayments?.payments || []);
+          
+          for (const payment of payments) {
+            // Check if payment already exists in our database
+            const existingBilling = await this.prisma.billingHistory.findFirst({
+              where: { goCardlessPaymentId: payment.id }
             });
 
-            syncResults.goCardlessPayments.push(payment.id);
-            syncResults.updatedRecords++;
+            if (!existingBilling) {
+              // Create new billing record
+              await this.prisma.billingHistory.create({
+                data: {
+                  customerId: customer.id,
+                  goCardlessPaymentId: payment.id,
+                  amount: payment.amount / 100, // Convert from pence
+                  currency: payment.currency,
+                  status: payment.status,
+                  description: payment.description,
+                  dueDate: new Date(payment.charge_date),
+                  paidAt: payment.status === 'confirmed' ? new Date(payment.charge_date) : null
+                }
+              });
+
+              syncResults.goCardlessPayments.push(payment.id);
+              syncResults.updatedRecords++;
+            }
           }
+        } catch (error) {
+          console.error('Error syncing GoCardless payments:', error);
+          // Continue with other sync operations even if GoCardless fails
         }
       }
+
+      // Cache the result
+      this.syncCache.set(cacheKey, {
+        data: syncResults,
+        timestamp: Date.now()
+      });
 
       console.log('✅ Billing data sync completed');
       return syncResults;
@@ -303,6 +330,24 @@ class BillingIntegrationService {
       console.error('❌ Error syncing billing data:', error);
       throw error;
     }
+  }
+
+  /**
+   * Clear sync cache for a specific customer
+   * @param {string} customerId - Customer ID
+   */
+  clearSyncCache(customerId) {
+    const cacheKey = `sync-${customerId}`;
+    this.syncCache.delete(cacheKey);
+    console.log('🗑️ Cleared sync cache for customer:', customerId);
+  }
+
+  /**
+   * Clear all sync cache
+   */
+  clearAllSyncCache() {
+    this.syncCache.clear();
+    console.log('🗑️ Cleared all sync cache');
   }
 
   /**

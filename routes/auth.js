@@ -146,7 +146,7 @@ const validateLogin = [
 
 // Register new customer with comprehensive details
 router.post('/register', 
-  rateLimiter(15 * 60 * 1000, 5), // 5 requests per 15 minutes
+  rateLimiter(15 * 60 * 1000, 20), // 20 requests per 15 minutes
   validateCustomerRegistration,
   async (req, res, next) => {
     try {
@@ -550,7 +550,7 @@ router.post('/register',
 
 // Bank details validation endpoint
 router.post('/validate-bank-details',
-  rateLimiter(60 * 1000, 10), // 10 requests per minute
+  rateLimiter(60 * 1000, 30), // 30 requests per minute
   [
     body('accountHolderName').trim().notEmpty().withMessage('Account holder name is required'),
     body('bankCode').trim().notEmpty().withMessage('Bank code is required'),
@@ -787,7 +787,7 @@ router.post('/logout-all',
 
 // Refresh access token
 router.post('/refresh',
-  rateLimiter(15 * 60 * 1000, 20), // 20 requests per 15 minutes
+  rateLimiter(15 * 60 * 1000, 50), // 50 requests per 15 minutes
   async (req, res, next) => {
     try {
       const { refreshToken } = req.body;
@@ -823,7 +823,7 @@ router.post('/refresh',
 
 // Forgot password endpoint
 router.post('/forgot-password',
-  rateLimiter(15 * 60 * 1000, 5), // 5 requests per 15 minutes
+  rateLimiter(15 * 60 * 1000, 20), // 20 requests per 15 minutes
   [
     body('email')
       .isEmail()
@@ -936,7 +936,7 @@ router.post('/forgot-password',
 
 // Reset password endpoint
 router.post('/reset-password',
-  rateLimiter(15 * 60 * 1000, 5), // 5 requests per 15 minutes
+  rateLimiter(15 * 60 * 1000, 20), // 20 requests per 15 minutes
   [
     body('token')
       .notEmpty()
@@ -1025,7 +1025,7 @@ router.post('/check-phone',
 
 // Verify reset token endpoint
 router.post('/verify-reset-token',
-  rateLimiter(15 * 60 * 1000, 10), // 10 requests per 15 minutes
+  rateLimiter(15 * 60 * 1000, 30), // 30 requests per 15 minutes
   [
     body('token')
       .notEmpty()

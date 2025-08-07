@@ -137,7 +137,7 @@ const validateCustomerRegistration = [
 
 // Register new customer with comprehensive details
 router.post('/register', 
-  rateLimiter(15 * 60 * 1000, 5), // 5 requests per 15 minutes
+  rateLimiter(15 * 60 * 1000, 20), // 20 requests per 15 minutes
   validateCustomerRegistration,
   async (req, res, next) => {
     try {

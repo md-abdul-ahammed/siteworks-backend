@@ -3,21 +3,74 @@ const cors = require('cors');
 const helmet = require('helmet');
 require('dotenv').config();
 
-// Prisma client setup
+// Prisma client setup with connection pooling and error handling
 const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
 
-console.log("BREVO_API_KEY", process.env.BREVO_API_KEY);
+// Create Prisma client with connection pooling configuration
+const prisma = new PrismaClient({
+  datasources: {
+    db: {
+      url: process.env.DATABASE_URL,
+    },
+  },
+  // Add connection pooling configuration for Supabase
+  log: ['query', 'info', 'warn', 'error'],
+});
 
-// Test database connection
-prisma.$connect()
-  .then(() => {
+// Database connection management
+let isConnected = false;
+
+const connectDatabase = async () => {
+  try {
+    await prisma.$connect();
+    isConnected = true;
     console.log('✅ Database connected successfully');
-  })
-  .catch((error) => {
+  } catch (error) {
+    isConnected = false;
     console.warn('⚠️ Database connection failed:', error.message);
     console.log('📝 You can set up the database later using: npx prisma db push');
-  });
+  }
+};
+
+// Reconnect function for handling connection drops
+const reconnectDatabase = async () => {
+  try {
+    await prisma.$disconnect();
+    await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+    await prisma.$connect();
+    isConnected = true;
+    console.log('✅ Database reconnected successfully');
+    return true;
+  } catch (error) {
+    isConnected = false;
+    console.error('❌ Database reconnection failed:', error.message);
+    return false;
+  }
+};
+
+// Initial connection
+connectDatabase();
+
+// Handle process termination
+process.on('beforeExit', async () => {
+  await prisma.$disconnect();
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', async (error) => {
+  console.error('Uncaught Exception:', error);
+  await prisma.$disconnect();
+  process.exit(1);
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', async (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  await prisma.$disconnect();
+  process.exit(1);
+});
+
+console.log("BREVO_API_KEY", process.env.BREVO_API_KEY);
 
 // Brevo SDK setup
 const SibApiV3Sdk = require('sib-api-v3-sdk');
@@ -34,6 +87,7 @@ const authRoutes = require('./routes/auth');
 const customerRoutes = require('./routes/customer');
 const billingRoutes = require('./routes/billing');
 const webhookRoutes = require('./routes/webhooks');
+const dashboardRoutes = require('./routes/dashboard');
 
 const app = express();
 const PORT = process.env.PORT || 8000;
@@ -54,7 +108,7 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Global rate limiting
-app.use(rateLimiter(15 * 60 * 1000, 100)); // 100 requests per 15 minutes
+app.use(rateLimiter(15 * 60 * 1000, 500)); // 500 requests per 15 minutes
 
 // In-memory storage for OTP (in production, use Redis or database)
 const otpStorage = new Map();
@@ -119,6 +173,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/webhooks', webhookRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 // Check email existence endpoint
 app.post('/api/check-email', async (req, res, next) => {

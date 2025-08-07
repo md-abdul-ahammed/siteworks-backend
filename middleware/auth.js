@@ -151,7 +151,8 @@ const optionalAuth = async (req, res, next) => {
 };
 
 // Rate limiting middleware
-const rateLimiter = (windowMs = 15 * 60 * 1000, max = 100) => {
+const rateLimiter = (options = {}) => {
+  const { windowMs = 15 * 60 * 1000, max = 200 } = options;
   const requests = new Map();
   
   return (req, res, next) => {

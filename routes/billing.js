@@ -6,9 +6,99 @@ const {
   rateLimiter, 
   errorHandler 
 } = require('../middleware/auth');
+const BillingIntegrationService = require('../services/billingIntegration');
 
 const router = express.Router();
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({
+  datasources: {
+    db: {
+      url: process.env.DATABASE_URL,
+    },
+  },
+  log: ['query', 'info', 'warn', 'error'],
+});
+const billingService = new BillingIntegrationService();
+
+// Database health check endpoint
+router.get('/health', async (req, res) => {
+  try {
+    // Test database connection
+    await prisma.$queryRaw`SELECT 1`;
+    
+    res.json({
+      success: true,
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      database: 'connected'
+    });
+  } catch (error) {
+    console.error('Database health check failed:', error);
+    
+    res.status(503).json({
+      success: false,
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      database: 'disconnected',
+      error: error.message
+    });
+  }
+});
+
+// Database operation with retry logic
+const executeWithRetry = async (operation, maxRetries = 3) => {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      console.error(`Database operation attempt ${attempt} failed:`, error.message);
+      
+      if (error.code === 'P1001' && attempt < maxRetries) {
+        // Database connection error, wait and retry
+        console.log(`Retrying database operation in ${attempt * 1000}ms...`);
+        await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+        continue;
+      }
+      
+      if (attempt === maxRetries) {
+        throw error;
+      }
+    }
+  }
+};
+
+// Rate limiting for sync endpoint (max 10 requests per 5 minutes per user)
+const syncRateLimiter = rateLimiter({
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 10, // limit each IP to 10 requests per windowMs
+  message: 'Too many sync requests, please try again later',
+  keyGenerator: (req) => req.user?.id || req.ip // Use user ID if authenticated, otherwise IP
+});
+
+// Sync billing data from Zoho for the logged-in user
+router.post('/sync',
+  verifyToken,
+  syncRateLimiter,
+  async (req, res, next) => {
+    try {
+      console.log('🔄 Syncing billing data for user:', req.user.id);
+      
+      const result = await billingService.syncBillingData(req.user.id);
+      
+      res.json({
+        success: true,
+        message: 'Billing data synced successfully',
+        data: result
+      });
+
+    } catch (error) {
+      console.error('Error syncing billing data:', error);
+      res.status(500).json({
+        error: 'Failed to sync billing data',
+        message: error.message
+      });
+    }
+  }
+);
 
 // Get billing history for customer
 router.get('/history',
@@ -53,56 +143,64 @@ router.get('/history',
         whereClause.status = status;
       }
 
-      // Get billing history with receipts count
-      const billingHistory = await prisma.billingHistory.findMany({
-        where: whereClause,
-        include: {
-          receipts: {
-            select: {
-              id: true,
-              fileName: true,
-              fileUrl: true,
-              isDownloaded: true,
-              createdAt: true
+      // Get billing history with receipts count using retry logic
+      const billingHistory = await executeWithRetry(async () => {
+        return await prisma.billingHistory.findMany({
+          where: whereClause,
+          include: {
+            receipts: {
+              select: {
+                id: true,
+                fileName: true,
+                fileUrl: true,
+                isDownloaded: true,
+                createdAt: true
+              }
+            },
+            _count: {
+              select: {
+                receipts: true
+              }
             }
           },
+          orderBy: {
+            createdAt: 'desc'
+          },
+          skip: offset,
+          take: limit
+        });
+      });
+
+      // Get total count for pagination using retry logic
+      const totalCount = await executeWithRetry(async () => {
+        return await prisma.billingHistory.count({
+          where: whereClause
+        });
+      });
+
+      // Calculate summary statistics using retry logic
+      const summary = await executeWithRetry(async () => {
+        return await prisma.billingHistory.aggregate({
+          where: whereClause,
+          _sum: {
+            amount: true
+          },
           _count: {
-            select: {
-              receipts: true
-            }
+            id: true
           }
-        },
-        orderBy: {
-          createdAt: 'desc'
-        },
-        skip: offset,
-        take: limit
+        });
       });
 
-      // Get total count for pagination
-      const totalCount = await prisma.billingHistory.count({
-        where: whereClause
-      });
-
-      // Calculate summary statistics
-      const summary = await prisma.billingHistory.aggregate({
-        where: whereClause,
-        _sum: {
-          amount: true
-        },
-        _count: {
-          id: true
-        }
-      });
-
-      const paidAmount = await prisma.billingHistory.aggregate({
-        where: {
-          ...whereClause,
-          status: 'paid'
-        },
-        _sum: {
-          amount: true
-        }
+      const paidAmount = await executeWithRetry(async () => {
+        return await prisma.billingHistory.aggregate({
+          where: {
+            ...whereClause,
+            status: 'paid'
+          },
+          _sum: {
+            amount: true
+          }
+        });
       });
 
       res.json({
@@ -125,10 +223,41 @@ router.get('/history',
       });
 
     } catch (error) {
+      console.error('Error in billing history endpoint:', error);
+      
+      // Handle specific database connection errors
+      if (error.code === 'P1001') {
+        return res.status(503).json({
+          error: 'Database temporarily unavailable',
+          message: 'Please try again in a few moments',
+          code: 'DATABASE_UNAVAILABLE'
+        });
+      }
+      
+      // Handle other Prisma errors
+      if (error.code && error.code.startsWith('P')) {
+        return res.status(500).json({
+          error: 'Database operation failed',
+          message: 'Please try again later',
+          code: 'DATABASE_ERROR'
+        });
+      }
+      
       next(error);
     }
   }
 );
+
+// Helper function to invalidate cache when billing data changes
+const invalidateBillingCache = async (customerId) => {
+  try {
+    // Clear sync cache for this customer
+    billingService.clearSyncCache(customerId);
+    console.log('🗑️ Invalidated billing cache for customer:', customerId);
+  } catch (error) {
+    console.error('Error invalidating billing cache:', error);
+  }
+};
 
 // Get specific billing record with receipts
 router.get('/history/:id',
