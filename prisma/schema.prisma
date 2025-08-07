@@ -59,6 +59,8 @@ model Customer {
   // Relations
   refreshTokens RefreshToken[]
   passwordResetTokens PasswordResetToken[]
+  billingHistory BillingHistory[]
+  receipts      Receipt[]
 
   @@map("customers")
 }
@@ -87,4 +89,44 @@ model PasswordResetToken {
   customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   
   @@map("password_reset_tokens")
+}
+
+model BillingHistory {
+  id          String   @id @default(cuid())
+  customerId  String
+  goCardlessPaymentId String? // GoCardless payment ID
+  zohoInvoiceId String? // Zoho invoice ID
+  amount      Decimal  @db.Decimal(10, 2)
+  currency    String   @default("GBP")
+  status      String   // pending, paid, failed, cancelled
+  description String?
+  dueDate     DateTime?
+  paidAt      DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  receipts    Receipt[]
+  
+  @@map("billing_history")
+}
+
+model Receipt {
+  id              String   @id @default(cuid())
+  billingHistoryId String
+  customerId      String
+  goCardlessPaymentId String? // GoCardless payment ID
+  zohoInvoiceId   String? // Zoho invoice ID
+  fileName        String
+  fileUrl         String? // Made optional since PDF might not be immediately available
+  fileSize        Int? // in bytes
+  mimeType        String @default("application/pdf")
+  isDownloaded    Boolean @default(false)
+  downloadedAt    DateTime?
+  createdAt       DateTime @default(now())
+  
+  billingHistory  BillingHistory @relation(fields: [billingHistoryId], references: [id], onDelete: Cascade)
+  customer        Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  
+  @@map("receipts")
 }

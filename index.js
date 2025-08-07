@@ -32,6 +32,8 @@ const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 const { rateLimiter } = require('./middleware/auth');
 const authRoutes = require('./routes/auth');
 const customerRoutes = require('./routes/customer');
+const billingRoutes = require('./routes/billing');
+const webhookRoutes = require('./routes/webhooks');
 
 const app = express();
 const PORT = process.env.PORT || 8000;
@@ -115,6 +117,8 @@ app.get('/health', (req, res) => {
 // API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/customers', customerRoutes);
+app.use('/api/billing', billingRoutes);
+app.use('/api/webhooks', webhookRoutes);
 
 // Check email existence endpoint
 app.post('/api/check-email', async (req, res, next) => {

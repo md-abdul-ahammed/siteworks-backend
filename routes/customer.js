@@ -289,7 +289,8 @@ router.post('/register',
               goCardlessBankAccount.id,
               {
                 reference: `MANDATE-${customer.id}-${Date.now()}`,
-                scheme: customer.countryOfResidence === 'GB' ? 'bacs' : 'sepa_core'
+                scheme: customer.countryOfResidence === 'GB' ? 'bacs' : 
+                        customer.countryOfResidence === 'US' ? 'ach' : 'sepa_core'
               }
             );
 
@@ -497,15 +498,15 @@ router.put('/profile',
       .optional()
       .isMobilePhone()
       .withMessage('Please provide a valid phone number')
-      .custom(async (value) => {
+      .custom(async (value, { req }) => {
         if (!value) return true; // Allow empty/undefined values
         
-        // Check if phone number is already taken by another customer
+        // Check if phone number is already taken by another customer (excluding current user)
         const existingCustomer = await prisma.customer.findUnique({
           where: { phone: value }
         });
         
-        if (existingCustomer) {
+        if (existingCustomer && existingCustomer.id !== req.user.id) {
           throw new Error('Phone number is already registered by another user');
         }
         

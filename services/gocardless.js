@@ -46,10 +46,9 @@ class GoCardlessService {
         given_name: customerData.firstName,
         family_name: customerData.lastName,
         company_name: customerData.companyName || undefined,
-        phone_number: customerData.phone || undefined,
         country_code: customerData.countryOfResidence,
         address_line1: customerData.address.line1,
-        address_line2: customerData.address.line2 || undefined,
+        address_line2: customerData.address.addressLine2 || undefined,
         city: customerData.address.city,
         postal_code: customerData.address.postcode,
         region: customerData.address.state || undefined,
@@ -59,6 +58,11 @@ class GoCardlessService {
           source: 'website_registration'
         }
       };
+
+      // Only add phone_number if it's provided and valid
+      if (customerData.phone && customerData.phone.trim()) {
+        customerPayload.phone_number = customerData.phone;
+      }
 
       console.log('Creating GoCardless customer with payload:', {
         ...customerPayload,
@@ -98,96 +102,154 @@ class GoCardlessService {
       const bankAccountPayload = {
         account_holder_name: bankDetails.accountHolderName,
         account_number: bankDetails.accountNumber,
+        account_type: bankDetails.accountType,
         country_code: bankDetails.countryCode,
         currency: this.getCurrencyForCountry(bankDetails.countryCode),
-        account_type: bankDetails.accountType || 'checking',
         links: {
           customer: goCardlessCustomerId
         },
         metadata: {
+          internal_customer_id: bankDetails.internalCustomerId || '',
           source: 'website_registration'
         }
       };
 
-      // Handle country-specific requirements
-      // Countries that use bank_code (routing number)
-      const bankCodeCountries = ['US'];
-      
-      // Countries that use branch_code (sort code)
-      const branchCodeCountries = ['GB', 'DE', 'FR', 'IT', 'ES', 'NL', 'BE', 'AT', 'IE', 'PT', 'FI', 'LU', 'SE', 'DK', 'NO', 'CA', 'AU', 'NZ'];
-      
-      if (bankCodeCountries.includes(bankDetails.countryCode)) {
-        // For countries that use bank_code (routing number)
-        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, bankDetails.countryCode);
-      } else if (branchCodeCountries.includes(bankDetails.countryCode)) {
-        // For countries that use branch_code (sort code)
-        bankAccountPayload.branch_code = this.formatBankCode(bankDetails.bankCode, bankDetails.countryCode);
-      } else {
-        // For other countries, try branch_code as default
-        bankAccountPayload.branch_code = this.formatBankCode(bankDetails.bankCode, bankDetails.countryCode);
+      // Add country-specific fields
+      if (bankDetails.countryCode === 'GB') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'GB');
+        bankAccountPayload.branch_code = bankDetails.bankCode.substring(0, 6);
+        // Remove account_type for UK as it's not required
+        delete bankAccountPayload.account_type;
+      } else if (bankDetails.countryCode === 'US') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'US');
+      } else if (bankDetails.countryCode === 'CA') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'CA');
+      } else if (bankDetails.countryCode === 'AU') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'AU');
+      } else if (bankDetails.countryCode === 'NZ') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'NZ');
+      } else if (bankDetails.countryCode === 'SE') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'SE');
+      } else if (bankDetails.countryCode === 'NO') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'NO');
+      } else if (bankDetails.countryCode === 'DK') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'DK');
+      } else if (bankDetails.countryCode === 'FI') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'FI');
+      } else if (bankDetails.countryCode === 'DE') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'DE');
+      } else if (bankDetails.countryCode === 'AT') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'AT');
+      } else if (bankDetails.countryCode === 'BE') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'BE');
+      } else if (bankDetails.countryCode === 'NL') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'NL');
+      } else if (bankDetails.countryCode === 'FR') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'FR');
+      } else if (bankDetails.countryCode === 'ES') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'ES');
+      } else if (bankDetails.countryCode === 'IT') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'IT');
+      } else if (bankDetails.countryCode === 'IE') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'IE');
+      } else if (bankDetails.countryCode === 'PL') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'PL');
+      } else if (bankDetails.countryCode === 'CZ') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'CZ');
+      } else if (bankDetails.countryCode === 'HU') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'HU');
+      } else if (bankDetails.countryCode === 'PT') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'PT');
+      } else if (bankDetails.countryCode === 'GR') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'GR');
+      } else if (bankDetails.countryCode === 'HR') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'HR');
+      } else if (bankDetails.countryCode === 'SI') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'SI');
+      } else if (bankDetails.countryCode === 'SK') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'SK');
+      } else if (bankDetails.countryCode === 'EE') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'EE');
+      } else if (bankDetails.countryCode === 'LV') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'LV');
+      } else if (bankDetails.countryCode === 'LT') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'LT');
+      } else if (bankDetails.countryCode === 'LU') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'LU');
+      } else if (bankDetails.countryCode === 'MT') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'MT');
+      } else if (bankDetails.countryCode === 'CY') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'CY');
+      } else if (bankDetails.countryCode === 'BG') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'BG');
+      } else if (bankDetails.countryCode === 'RO') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'RO');
+      } else if (bankDetails.countryCode === 'IS') {
+        bankAccountPayload.bank_code = this.formatBankCode(bankDetails.bankCode, 'IS');
       }
 
-      console.log('Creating GoCardless customer bank account with payload:', {
+      console.log('Creating GoCardless bank account with payload:', {
         ...bankAccountPayload,
-        account_number: '****' + bankAccountPayload.account_number.slice(-4), // Mask for logging
-        bank_code: bankAccountPayload.bank_code,
-        branch_code: bankAccountPayload.branch_code
+        account_number: '[HIDDEN]'
       });
 
-      const customerBankAccount = await this.client.customerBankAccounts.create(
+      const bankAccount = await this.client.customerBankAccounts.create(
         bankAccountPayload,
         idempotencyKey
       );
 
-      console.log('GoCardless customer bank account created successfully:', customerBankAccount.id);
-      return customerBankAccount;
+      console.log('GoCardless bank account created successfully:', bankAccount.id);
+      return bankAccount;
 
     } catch (error) {
-      console.error('Error creating GoCardless customer bank account:', error);
-      throw new Error(`Failed to create GoCardless customer bank account: ${error.message}`);
+      console.error('Error creating GoCardless bank account:', error);
+      throw new Error(`Failed to create GoCardless bank account: ${error.message}`);
     }
   }
 
   /**
-   * Create a GoCardless mandate for a customer bank account
+   * Create a mandate for a customer bank account
    * @param {string} customerBankAccountId - GoCardless customer bank account ID
-   * @param {Object} mandateData - Mandate information
-   * @param {string} mandateData.scheme - Payment scheme ('bacs', 'ach', 'sepa_core', etc.)
-   * @param {string} mandateData.countryCode - Country code for determining scheme
-   * @param {string} mandateData.payerIpAddress - Payer IP address (required for ACH scheme)
+   * @param {Object} mandateData - Mandate data
+   * @param {string} mandateData.scheme - Payment scheme (e.g., 'bacs', 'sepa_core', 'ach')
+   * @param {string} mandateData.countryCode - Country code to determine scheme
+   * @param {string} mandateData.metadata - Additional metadata
    * @returns {Promise<Object>} GoCardless mandate object
    */
   async createMandate(customerBankAccountId, mandateData = {}) {
     try {
       const idempotencyKey = uuidv4();
       
-      // Determine scheme based on country code or use provided scheme
-      const scheme = mandateData.scheme || (mandateData.countryCode ? this.getSchemeForCountry(mandateData.countryCode) : 'bacs');
+      // Determine scheme based on country code if not explicitly provided
+      let scheme = mandateData.scheme;
+      if (!scheme && mandateData.countryCode) {
+        scheme = this.getSchemeForCountry(mandateData.countryCode);
+      } else if (!scheme) {
+        scheme = 'bacs'; // Default to BACS for UK
+      }
       
       const mandatePayload = {
+        scheme: scheme,
         links: {
           customer_bank_account: customerBankAccountId
         },
-        scheme: scheme,
         metadata: {
+          internal_customer_id: mandateData.internalCustomerId || '',
           source: 'website_registration',
-          created_via: 'api'
+          ...mandateData.metadata
         }
       };
 
-      // Add payer_ip_address for ACH scheme (required by GoCardless)
+      // Add payer_ip_address for ACH mandates
       if (scheme === 'ach') {
-        let payerIp = mandateData.payerIpAddress || '8.8.8.8';
-        
-        // Validate and fix IP address
-        if (payerIp === '::1' || payerIp === 'localhost' || payerIp === '127.0.0.1' || !payerIp.match(/^\d+\.\d+\.\d+\.\d+$/)) {
-          payerIp = '8.8.8.8'; // Use Google DNS IP as fallback
-        }
-        
-        mandatePayload.payer_ip_address = payerIp;
+        mandatePayload.payer_ip_address = mandateData.payerIpAddress || '8.8.8.8';
       }
 
-      console.log('Creating GoCardless mandate with payload:', mandatePayload);
+      console.log('Creating GoCardless mandate with payload:', {
+        ...mandatePayload,
+        scheme: scheme,
+        countryCode: mandateData.countryCode
+      });
 
       const mandate = await this.client.mandates.create(
         mandatePayload,
@@ -200,6 +262,188 @@ class GoCardlessService {
     } catch (error) {
       console.error('Error creating GoCardless mandate:', error);
       throw new Error(`Failed to create GoCardless mandate: ${error.message}`);
+    }
+  }
+
+  /**
+   * Create a payment for a mandate
+   * @param {string} mandateId - GoCardless mandate ID
+   * @param {Object} paymentData - Payment data
+   * @param {number} paymentData.amount - Payment amount in pence/cents
+   * @param {string} paymentData.currency - Currency code (e.g., 'GBP', 'USD', 'EUR')
+   * @param {string} paymentData.description - Payment description
+   * @param {string} paymentData.reference - Payment reference
+   * @param {Date} paymentData.chargeDate - Charge date
+   * @returns {Promise<Object>} GoCardless payment object
+   */
+  async createPayment(mandateId, paymentData) {
+    try {
+      const idempotencyKey = uuidv4();
+      
+      // Get mandate to check the currency and scheme
+      const mandate = await this.getMandate(mandateId);
+      
+      // Determine currency based on mandate scheme
+      let currency = paymentData.currency || 'GBP';
+      if (mandate.scheme === 'ach') {
+        currency = 'USD';
+      } else if (mandate.scheme === 'bacs') {
+        currency = 'GBP';
+      } else if (mandate.scheme === 'sepa_core') {
+        currency = 'EUR';
+      }
+      
+      // Create a shorter reference (max 10 characters)
+      const shortReference = paymentData.reference ? 
+        paymentData.reference.substring(0, 10) : 
+        `INV${Date.now().toString().slice(-6)}`;
+      
+      const paymentPayload = {
+        amount: paymentData.amount, // Amount in pence/cents
+        currency: currency,
+        description: paymentData.description,
+        reference: shortReference,
+        charge_date: paymentData.chargeDate.toISOString().split('T')[0], // YYYY-MM-DD format
+        links: {
+          mandate: mandateId
+        },
+        metadata: {
+          internal_customer_id: paymentData.internalCustomerId || '',
+          invoice_id: paymentData.invoiceId || '',
+          source: 'website_payment'
+        }
+      };
+
+      console.log('Creating GoCardless payment with payload:', {
+        ...paymentPayload,
+        amount: `${paymentPayload.amount} ${paymentPayload.currency}`
+      });
+
+      const payment = await this.client.payments.create(
+        paymentPayload,
+        idempotencyKey
+      );
+
+      console.log('GoCardless payment created successfully:', payment.id);
+      return payment;
+
+    } catch (error) {
+      console.error('Error creating GoCardless payment:', error);
+      throw new Error(`Failed to create GoCardless payment: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get payment by ID
+   * @param {string} paymentId - GoCardless payment ID
+   * @returns {Promise<Object>} GoCardless payment object
+   */
+  async getPayment(paymentId) {
+    try {
+      const payment = await this.client.payments.get(paymentId);
+      return payment;
+    } catch (error) {
+      console.error('Error getting GoCardless payment:', error);
+      throw new Error(`Failed to get GoCardless payment: ${error.message}`);
+    }
+  }
+
+  /**
+   * List payments for a mandate
+   * @param {string} mandateId - GoCardless mandate ID
+   * @param {Object} options - Query options
+   * @returns {Promise<Array>} Array of GoCardless payment objects
+   */
+  async listPayments(mandateId, options = {}) {
+    try {
+      const payments = await this.client.payments.list({
+        mandate: mandateId,
+        ...options
+      });
+      return payments;
+    } catch (error) {
+      console.error('Error listing GoCardless payments:', error);
+      throw new Error(`Failed to list GoCardless payments: ${error.message}`);
+    }
+  }
+
+  /**
+   * Process webhook events
+   * @param {Object} webhookData - Webhook data from GoCardless
+   * @returns {Promise<Object>} Processed webhook result
+   */
+  async processWebhook(webhookData) {
+    try {
+      const events = webhookData.events || [];
+      const processedEvents = [];
+
+      for (const event of events) {
+        const processedEvent = {
+          id: event.id,
+          resource_type: event.resource_type,
+          action: event.action,
+          resource_id: event.links?.payment || event.links?.mandate || event.links?.customer,
+          created_at: event.created_at,
+          details: event.details
+        };
+
+        // Handle payment events
+        if (event.resource_type === 'payments') {
+          switch (event.action) {
+            case 'confirmed':
+              processedEvent.status = 'paid';
+              processedEvent.message = 'Payment confirmed successfully';
+              break;
+            case 'failed':
+              processedEvent.status = 'failed';
+              processedEvent.message = 'Payment failed';
+              break;
+            case 'cancelled':
+              processedEvent.status = 'cancelled';
+              processedEvent.message = 'Payment cancelled';
+              break;
+            case 'charged_back':
+              processedEvent.status = 'charged_back';
+              processedEvent.message = 'Payment charged back';
+              break;
+            default:
+              processedEvent.status = 'unknown';
+              processedEvent.message = `Payment ${event.action}`;
+          }
+        }
+
+        // Handle mandate events
+        if (event.resource_type === 'mandates') {
+          switch (event.action) {
+            case 'active':
+              processedEvent.status = 'active';
+              processedEvent.message = 'Mandate activated successfully';
+              break;
+            case 'failed':
+              processedEvent.status = 'failed';
+              processedEvent.message = 'Mandate failed';
+              break;
+            case 'cancelled':
+              processedEvent.status = 'cancelled';
+              processedEvent.message = 'Mandate cancelled';
+              break;
+            default:
+              processedEvent.status = 'unknown';
+              processedEvent.message = `Mandate ${event.action}`;
+          }
+        }
+
+        processedEvents.push(processedEvent);
+      }
+
+      return {
+        success: true,
+        events: processedEvents
+      };
+
+    } catch (error) {
+      console.error('Error processing GoCardless webhook:', error);
+      throw new Error(`Failed to process GoCardless webhook: ${error.message}`);
     }
   }
 

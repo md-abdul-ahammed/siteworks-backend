@@ -309,7 +309,8 @@ router.post('/register',
                 bankCode: bankCode,
                 accountNumber: accountNumber,
                 accountType: accountType,
-                countryCode: customer.countryOfResidence
+                countryCode: customer.countryOfResidence,
+                internalCustomerId: customer.id
               }
             );
             console.log('GoCardless customer bank account created:', goCardlessBankAccount.id);
@@ -319,7 +320,8 @@ router.post('/register',
               goCardlessBankAccount.id,
               {
                 countryCode: customer.countryOfResidence,
-                payerIpAddress: (req.ip && req.ip !== '::1' && req.ip !== '127.0.0.1') ? req.ip : '8.8.8.8'
+                payerIpAddress: (req.ip && req.ip !== '::1' && req.ip !== '127.0.0.1') ? req.ip : '8.8.8.8',
+                internalCustomerId: customer.id
               }
             );
 
