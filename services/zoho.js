@@ -227,6 +227,23 @@ class ZohoService {
   }
 
   /**
+   * Get all customers across the organization with optional filters
+   * Supports Zoho pagination via page and per_page
+   */
+  async getAllCustomers(options = {}) {
+    try {
+      const params = new URLSearchParams({
+        ...options
+      });
+      const response = await this.makeRequest(`contacts?${params.toString()}`);
+      return response;
+    } catch (error) {
+      console.error('Error getting all Zoho customers:', error.response?.data || error.message);
+      throw error;
+    }
+  }
+
+  /**
    * Generate invoice PDF and return download URL
    */
   async getInvoicePDF(invoiceId) {

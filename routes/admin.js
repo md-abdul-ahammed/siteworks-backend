@@ -76,6 +76,105 @@ router.get('/dashboard',
   requireAdmin,
   async (req, res, next) => {
     try {
+      const { source = 'db' } = req.query;
+
+      if (source === 'zoho') {
+        // Fetch all customers from Zoho for UI testing
+        console.log('🔄 Fetching ALL Zoho customers for dashboard...');
+        let allCustomers = [];
+        let currentPage = 1;
+        let hasMore = true;
+        
+        while (hasMore) {
+          try {
+            console.log(`📄 Fetching customers page ${currentPage}...`);
+            const options = { page: currentPage, per_page: 200 }; // Max per page
+            const zohoResp = await zohoService.getAllCustomers(options);
+            const pageCustomers = Array.isArray(zohoResp.contacts) ? zohoResp.contacts : [];
+            
+            if (pageCustomers.length === 0) {
+              hasMore = false;
+            } else {
+              allCustomers.push(...pageCustomers);
+              currentPage++;
+              
+              // Check if we've reached the end
+              const totalFromZoho = Number(zohoResp.page_context?.total || 0);
+              if (allCustomers.length >= totalFromZoho) {
+                hasMore = false;
+              }
+            }
+          } catch (error) {
+            console.error(`❌ Error fetching customers page ${currentPage}:`, error);
+            hasMore = false;
+          }
+        }
+        
+        console.log(`✅ Fetched ${allCustomers.length} total customers from Zoho`);
+
+        // Transform Zoho customers to match our interface
+        const recentUsers = allCustomers.slice(0, 10).map(customer => ({
+          id: customer.contact_id,
+          email: customer.email || '',
+          firstName: customer.first_name || '',
+          lastName: customer.last_name || '',
+          companyName: customer.company_name || '',
+          isActive: true, // Assume active for Zoho customers
+          isVerified: true, // Assume verified for Zoho customers
+          createdAt: customer.created_time || new Date().toISOString(),
+          lastLoginAt: null,
+          goCardlessCustomerId: null,
+          mandateStatus: null
+        }));
+
+        // Calculate stats from Zoho data
+        const totalUsers = allCustomers.length;
+        const activeUsers = allCustomers.filter(c => c.status !== 'inactive').length;
+        const verifiedUsers = allCustomers.filter(c => c.email).length; // Customers with email considered verified
+        const usersWithGoCardless = 0; // Zoho doesn't have this info
+        const recentRegistrations = allCustomers.filter(c => {
+          const createdDate = new Date(c.created_time || 0);
+          const thirtyDaysAgo = new Date();
+          thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+          return createdDate >= thirtyDaysAgo;
+        }).length;
+
+        // Get billing statistics from Zoho invoices
+        let totalRevenue = 0;
+        let totalTransactions = 0;
+        try {
+          console.log('📊 Fetching billing stats from Zoho...');
+          const invoiceOptions = { page: 1, per_page: 200 };
+          const invoiceResp = await zohoService.getAllInvoices(invoiceOptions);
+          const invoices = Array.isArray(invoiceResp.invoices) ? invoiceResp.invoices : [];
+          
+          totalRevenue = invoices
+            .filter(inv => inv.status === 'paid')
+            .reduce((sum, inv) => sum + (Number(inv.total) || 0), 0);
+          totalTransactions = invoices.filter(inv => inv.status === 'paid').length;
+        } catch (error) {
+          console.error('❌ Error fetching billing stats:', error);
+        }
+
+        return res.json({
+          success: true,
+          dashboard: {
+            overview: {
+              totalUsers,
+              activeUsers,
+              verifiedUsers,
+              usersWithGoCardless,
+              recentRegistrations,
+              totalRevenue,
+              totalTransactions
+            },
+            recentUsers
+          },
+          source: 'zoho'
+        });
+      }
+
+      // Default: Get data from database
       // Get total users count
       const totalUsers = await withDbRetry(() => prisma.customer.count({
         where: { role: 'user' }
@@ -162,7 +261,8 @@ router.get('/dashboard',
             totalTransactions: billingStats._count.id || 0
           },
           recentUsers
-        }
+        },
+        source: 'db'
       });
 
     } catch (error) {
