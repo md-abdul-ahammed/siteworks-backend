@@ -82,7 +82,7 @@ const validateCustomerRegistration = [
         });
         
         if (existingCustomer) {
-          throw new Error('Phone number is already registered by another user');
+          throw new Error('Phone number is already exist');
         }
         
         return true;
@@ -187,7 +187,7 @@ router.post('/register',
 
         if (existingCustomer) {
           return res.status(409).json({
-            error: 'Customer with this email already exists',
+            error: ' Email already exists',
             code: 'CUSTOMER_EXISTS'
           });
         }
@@ -466,126 +466,211 @@ router.get('/profile',
 // Update customer profile
 router.put('/profile',
   verifyToken,
-  [
-    body('firstName')
-      .optional()
-      .trim()
-      .isLength({ min: 1, max: 50 })
-      .withMessage('First name must be between 1 and 50 characters'),
-    body('lastName')
-      .optional()
-      .trim()
-      .isLength({ min: 1, max: 50 })
-      .withMessage('Last name must be between 1 and 50 characters'),
-    body('companyName')
-      .optional()
-      .trim()
-      .custom((value) => {
-        if (value === undefined || value === null || value === '') {
-          return true; // Allow empty/undefined values
-        }
-        if (value.length < 1 || value.length > 100) {
-          throw new Error('Company name must be between 1 and 100 characters');
-        }
-        return true;
-      }),
-    body('email')
-      .optional()
-      .isEmail()
-      .normalizeEmail()
-      .withMessage('Please provide a valid email address'),
-    body('phone')
-      .optional()
-      .isMobilePhone()
-      .withMessage('Please provide a valid phone number')
-      .custom(async (value, { req }) => {
-        if (!value) return true; // Allow empty/undefined values
-        
-        // Check if phone number is already taken by another customer (excluding current user)
-        const existingCustomer = await prisma.customer.findUnique({
-          where: { phone: value }
-        });
-        
-        if (existingCustomer && existingCustomer.id !== req.user.id) {
-          throw new Error('Phone number is already registered by another user');
-        }
-        
-        return true;
-      }),
-    // Address validation
-    body('address.line1')
-      .optional()
-      .trim()
-      .isLength({ min: 1, max: 200 })
-      .withMessage('Address line 1 must be between 1 and 200 characters'),
-    body('address.line2')
-      .optional()
-      .trim()
-      .isLength({ max: 200 })
-      .withMessage('Address line 2 must be less than 200 characters'),
-    body('address.city')
-      .optional()
-      .trim()
-      .isLength({ min: 1, max: 100 })
-      .withMessage('City must be between 1 and 100 characters'),
-    body('address.postcode')
-      .optional()
-      .trim()
-      .isLength({ min: 1, max: 20 })
-      .withMessage('Postcode must be between 1 and 20 characters'),
-    body('address.state')
-      .optional()
-      .trim()
-      .isLength({ max: 100 })
-      .withMessage('State must be less than 100 characters')
-  ],
   async (req, res, next) => {
     try {
-      // Check for validation errors
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          error: 'Validation failed',
-          details: errors.array(),
-          code: 'VALIDATION_ERROR'
-        });
-      }
-
       const { firstName, lastName, companyName, email, phone, address } = req.body;
+      const errors = [];
 
-      // Check if email is being updated and if it's already taken by another user
-      if (email && email !== req.user.email) {
-        const existingCustomer = await prisma.customer.findUnique({
-          where: { email }
-        });
-        
-        if (existingCustomer && existingCustomer.id !== req.user.id) {
-          return res.status(409).json({
-            error: 'Email is already taken by another user',
-            code: 'EMAIL_TAKEN'
+      // Only validate fields that are being updated
+      if (firstName !== undefined) {
+        if (!firstName || firstName.trim().length < 1 || firstName.trim().length > 50) {
+          errors.push({
+            type: 'field',
+            value: firstName,
+            msg: 'First name must be between 1 and 50 characters',
+            path: 'firstName',
+            location: 'body'
           });
         }
       }
 
-      // Get current customer data to check if we need to update GoCardless
-      const currentCustomer = await prisma.customer.findUnique({
-        where: { id: req.user.id },
-        select: {
-          email: true,
-          firstName: true,
-          lastName: true,
-          companyName: true,
-          phone: true,
-          countryOfResidence: true,
-          addressLine1: true,
-          addressLine2: true,
-          city: true,
-          postcode: true,
-          state: true,
-          goCardlessCustomerId: true,
-          openPhoneContactId: true
+      if (lastName !== undefined) {
+        if (!lastName || lastName.trim().length < 1 || lastName.trim().length > 50) {
+          errors.push({
+            type: 'field',
+            value: lastName,
+            msg: 'Last name must be between 1 and 50 characters',
+            path: 'lastName',
+            location: 'body'
+          });
         }
-      });
+      }
+
+      if (companyName !== undefined) {
+        if (companyName !== null && companyName !== '' && (companyName.length < 1 || companyName.length > 100)) {
+          errors.push({
+            type: 'field',
+            value: companyName,
+            msg: 'Company name must be between 1 and 100 characters',
+            path: 'companyName',
+            location: 'body'
+          });
+        }
+      }
+
+      if (email !== undefined) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+          errors.push({
+            type: 'field',
+            value: email,
+            msg: 'Please provide a valid email address',
+            path: 'email',
+            location: 'body'
+          });
+        }
+      }
+
+      if (phone !== undefined) {
+        const phoneRegex = /^\+?[1-9]\d{1,14}$/;
+        if (phone && !phoneRegex.test(phone)) {
+          errors.push({
+            type: 'field',
+            value: phone,
+            msg: 'Please provide a valid phone number',
+            path: 'phone',
+            location: 'body'
+          });
+        }
+        
+        // Only check phone uniqueness if phone is being updated and database is available
+        if (phone && phoneRegex.test(phone)) {
+          try {
+            const existingCustomer = await prisma.customer.findUnique({
+              where: { phone: phone }
+            });
+            
+            if (existingCustomer && existingCustomer.id !== req.user.id) {
+              errors.push({
+                type: 'field',
+                value: phone,
+                msg: 'Phone number is already exist',
+                path: 'phone',
+                location: 'body'
+              });
+            }
+          } catch (dbError) {
+            // If database is not available, skip phone uniqueness check
+            console.log('Database not available for phone validation, skipping uniqueness check');
+          }
+        }
+      }
+
+      // Address validation
+      if (address) {
+        if (address.line1 !== undefined) {
+          if (address.line1 && (address.line1.trim().length < 1 || address.line1.trim().length > 200)) {
+            errors.push({
+              type: 'field',
+              value: address.line1,
+              msg: 'Address line 1 must be between 1 and 200 characters',
+              path: 'address.line1',
+              location: 'body'
+            });
+          }
+        }
+
+        if (address.line2 !== undefined) {
+          if (address.line2 && address.line2.trim().length > 200) {
+            errors.push({
+              type: 'field',
+              value: address.line2,
+              msg: 'Address line 2 must be less than 200 characters',
+              path: 'address.line2',
+              location: 'body'
+            });
+          }
+        }
+
+        if (address.city !== undefined) {
+          if (address.city && (address.city.trim().length < 1 || address.city.trim().length > 100)) {
+            errors.push({
+              type: 'field',
+              value: address.city,
+              msg: 'City must be between 1 and 100 characters',
+              path: 'address.city',
+              location: 'body'
+            });
+          }
+        }
+
+        if (address.postcode !== undefined) {
+          if (address.postcode && (address.postcode.trim().length < 1 || address.postcode.trim().length > 20)) {
+            errors.push({
+              type: 'field',
+              value: address.postcode,
+              msg: 'Postcode must be between 1 and 20 characters',
+              path: 'address.postcode',
+              location: 'body'
+            });
+          }
+        }
+
+        if (address.state !== undefined) {
+          if (address.state && address.state.trim().length > 100) {
+            errors.push({
+              type: 'field',
+              value: address.state,
+              msg: 'State must be less than 100 characters',
+              path: 'address.state',
+              location: 'body'
+            });
+          }
+        }
+      }
+
+            // Check for validation errors
+      if (errors.length > 0) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          details: errors,
+          code: 'VALIDATION_ERROR'
+        });
+      }
+
+      // Check if email is being updated and if it's already taken by another user
+      if (email && email !== req.user.email) {
+        try {
+          const existingCustomer = await prisma.customer.findUnique({
+            where: { email }
+          });
+          
+          if (existingCustomer && existingCustomer.id !== req.user.id) {
+            return res.status(409).json({
+              error: 'Email is already taken by another user',
+              code: 'EMAIL_TAKEN'
+            });
+          }
+        } catch (dbError) {
+          console.log('Database not available for email validation, skipping uniqueness check');
+        }
+      }
+
+      // Get current customer data to check if we need to update GoCardless
+      let currentCustomer;
+      try {
+        currentCustomer = await prisma.customer.findUnique({
+          where: { id: req.user.id },
+          select: {
+            email: true,
+            firstName: true,
+            lastName: true,
+            companyName: true,
+            phone: true,
+            countryOfResidence: true,
+            addressLine1: true,
+            addressLine2: true,
+            city: true,
+            postcode: true,
+            state: true,
+            goCardlessCustomerId: true,
+            openPhoneContactId: true
+          }
+        });
+      } catch (dbError) {
+        console.log('Database not available, cannot get current customer data');
+        currentCustomer = null;
+      }
 
       // Prepare update data
       const updateData = { firstName, lastName, companyName, email, phone };
@@ -600,34 +685,42 @@ router.put('/profile',
       }
 
       // Update customer in database
-      const updatedCustomer = await prisma.customer.update({
-        where: { id: req.user.id },
-        data: updateData,
-        select: {
-          id: true,
-          email: true,
-          firstName: true,
-          lastName: true,
-          companyName: true,
-          phone: true,
-          countryOfResidence: true,
-          addressLine1: true,
-          addressLine2: true,
-          city: true,
-          postcode: true,
-          state: true,
-          isVerified: true,
-          isActive: true,
-          lastLoginAt: true,
-          createdAt: true,
-          updatedAt: true,
-          goCardlessCustomerId: true,
-          goCardlessBankAccountId: true,
-          goCardlessMandateId: true,
-          mandateStatus: true,
-          openPhoneContactId: true
-        }
-      });
+      let updatedCustomer;
+      try {
+        updatedCustomer = await prisma.customer.update({
+          where: { id: req.user.id },
+          data: updateData,
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            companyName: true,
+            phone: true,
+            countryOfResidence: true,
+            addressLine1: true,
+            addressLine2: true,
+            city: true,
+            postcode: true,
+            state: true,
+            isVerified: true,
+            isActive: true,
+            lastLoginAt: true,
+            createdAt: true,
+            updatedAt: true,
+            goCardlessCustomerId: true,
+            goCardlessBankAccountId: true,
+            goCardlessMandateId: true,
+            mandateStatus: true,
+            openPhoneContactId: true
+          }
+        });
+      } catch (dbError) {
+        return res.status(500).json({
+          error: 'Database connection failed. Please try again later.',
+          code: 'DATABASE_ERROR'
+        });
+      }
 
       // Update GoCardless customer if they have a GoCardless customer ID
       if (currentCustomer.goCardlessCustomerId) {

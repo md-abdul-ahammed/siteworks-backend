@@ -123,6 +123,30 @@ class ZohoService {
   }
 
   /**
+   * Alias for getInvoicesByCustomer for compatibility
+   */
+  async getCustomerInvoices(customerId, options = {}) {
+    return this.getInvoicesByCustomer(customerId, options);
+  }
+
+  /**
+   * Get all invoices across the organization with optional filters
+   * Supports Zoho pagination via page and per_page
+   */
+  async getAllInvoices(options = {}) {
+    try {
+      const params = new URLSearchParams({
+        ...options
+      });
+      const response = await this.makeRequest(`invoices?${params.toString()}`);
+      return response;
+    } catch (error) {
+      console.error('Error getting all Zoho invoices:', error.response?.data || error.message);
+      throw error;
+    }
+  }
+
+  /**
    * Update invoice status
    */
   async updateInvoiceStatus(invoiceId, status) {
@@ -312,6 +336,64 @@ class ZohoService {
       
       // Return a basic URL that might work
       return `https://books.zoho.com/invoice/${invoiceId}/pdf`;
+    }
+  }
+
+  /**
+   * Fetch invoice PDF binary and return ArrayBuffer
+   */
+  async fetchInvoicePDFBinary(invoiceId) {
+    const accessToken = await this.getAccessToken();
+
+    // Helper
+    const tryRequest = async (url, headers = {}, params = {}) => {
+      return await axios.get(url, {
+        responseType: 'arraybuffer',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          ...headers,
+        },
+        params: { organization_id: this.organizationId, ...params },
+        validateStatus: () => true,
+      });
+    };
+
+    try {
+      // 1) Primary: zohoapis + dedicated pdf endpoint
+      let resp = await tryRequest(`https://www.zohoapis.com/books/v3/invoices/${invoiceId}/pdf`);
+      if (resp.status === 200 && resp.headers['content-type']?.includes('application/pdf')) {
+        return resp.data;
+      }
+
+      // 2) Accept: application/pdf on detail endpoint
+      resp = await tryRequest(`https://www.zohoapis.com/books/v3/invoices/${invoiceId}`, {
+        Accept: 'application/pdf',
+        'X-com-zoho-books-organizationid': this.organizationId,
+      });
+      if (resp.status === 200 && resp.headers['content-type']?.includes('application/pdf')) {
+        return resp.data;
+      }
+
+      // 3) Fallback: books.zoho.com pdf endpoint
+      resp = await tryRequest(`https://books.zoho.com/api/v3/invoices/${invoiceId}/pdf`);
+      if (resp.status === 200 && resp.headers['content-type']?.includes('application/pdf')) {
+        return resp.data;
+      }
+
+      // 4) Final fallback: resolve a download URL and let caller redirect
+      const url = await this.getInvoicePDF(invoiceId);
+      if (url) {
+        const redir = await axios.get(url, { responseType: 'arraybuffer', validateStatus: () => true });
+        if (redir.status === 200 && redir.headers['content-type']?.includes('application/pdf')) {
+          return redir.data;
+        }
+      }
+
+      throw new Error(`Unable to fetch PDF for invoice ${invoiceId}`);
+    } catch (error) {
+      console.error('Error fetching Zoho invoice PDF binary:', error.response?.data || error.message);
+      throw error;
     }
   }
 

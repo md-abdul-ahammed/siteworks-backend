@@ -203,6 +203,8 @@ class OpenPhoneSyncService {
         }
       });
 
+      console.log('Sending update payload to OpenPhone:', JSON.stringify(payload, null, 2));
+
       const response = await axios.patch(`${this.baseUrl}/contacts/${contactId}`, payload, {
         headers: {
           'Authorization': this.apiKey,
@@ -212,6 +214,7 @@ class OpenPhoneSyncService {
       });
 
       console.log('OpenPhone contact updated successfully:', contactId);
+      console.log('OpenPhone response:', response.data);
       return response.data?.data;
 
     } catch (error) {
@@ -228,15 +231,23 @@ class OpenPhoneSyncService {
 
     try {
       console.log('Syncing profile update with OpenPhone for customer:', customerId);
+      console.log('Updated fields:', updatedFields);
       
       // Find contact by customer ID or email
       let contact = null;
       
       if (updatedFields.email) {
+        console.log('Searching for contact by email:', updatedFields.email);
         contact = await this.findContactByEmail(updatedFields.email);
+        if (contact) {
+          console.log('Found contact by email:', contact.id);
+        } else {
+          console.log('No contact found by email');
+        }
       }
       
       if (!contact && updatedFields.openPhoneContactId) {
+        console.log('Searching for contact by stored ID:', updatedFields.openPhoneContactId);
         // Try to get contact by stored ID
         try {
           const response = await axios.get(`${this.baseUrl}/contacts/${updatedFields.openPhoneContactId}`, {
@@ -247,17 +258,25 @@ class OpenPhoneSyncService {
             timeout: 10000
           });
           contact = response.data?.data;
+          if (contact) {
+            console.log('Found contact by stored ID:', contact.id);
+          }
         } catch (error) {
           console.log('Could not find contact by stored ID, will create new one');
         }
       }
       
       if (contact) {
-        // Update existing contact
-        return await this.updateContact(contact.id, updatedFields);
+        console.log('Updating existing contact:', contact.id);
+        console.log('Contact current data:', contact);
+        const result = await this.updateContact(contact.id, updatedFields);
+        console.log('Update result:', result);
+        return result;
       } else {
-        // Create new contact
-        return await this.createContact(updatedFields);
+        console.log('Creating new contact');
+        const result = await this.createContact(updatedFields);
+        console.log('Create result:', result);
+        return result;
       }
       
     } catch (error) {

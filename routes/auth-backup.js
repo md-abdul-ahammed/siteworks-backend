@@ -256,7 +256,7 @@ router.post('/register',
         });
 
         if (existingCustomer) {
-          throw new Error('Customer with this email already exists');
+          throw new Error(' Email already exists');
         }
 
         // Hash password
@@ -551,7 +551,7 @@ router.post('/register',
 
 //         if (existingCustomer) {
 //           return res.status(409).json({
-//             error: 'Customer with this email already exists',
+//             error: ' Email already exists',
 //             code: 'CUSTOMER_EXISTS'
 //           });
 //         }

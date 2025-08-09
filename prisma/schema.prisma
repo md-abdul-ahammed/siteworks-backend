@@ -23,6 +23,7 @@ model Customer {
   isVerified  Boolean  @default(false)
   isActive    Boolean  @default(true)
   lastLoginAt DateTime?
+  role        String   @default("user") // "admin" or "user"
   
   // Personal Information
   firstName   String
@@ -54,6 +55,9 @@ model Customer {
   // OpenPhone Integration
   openPhoneContactId   String? // OpenPhone contact ID
   
+  // Zoho Integration
+  zohoCustomerId       String? // Zoho customer ID
+  
   // Timestamps
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -63,8 +67,22 @@ model Customer {
   passwordResetTokens PasswordResetToken[]
   billingHistory BillingHistory[]
   receipts      Receipt[]
+  adminData     Admin? // One-to-one relationship with Admin
 
   @@map("customers")
+}
+
+model Admin {
+  id          String   @id @default(cuid())
+  customerId  String   @unique
+  permissions String[] // Array of permissions like ["manage_users", "view_analytics", "manage_billing"]
+  lastAdminAction DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  
+  @@map("admins")
 }
 
 model RefreshToken {

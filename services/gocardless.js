@@ -643,13 +643,32 @@ class GoCardlessService {
         company_name: customerData.companyName || undefined,
         phone_number: customerData.phone || undefined,
         country_code: customerData.countryOfResidence,
-        address_line1: customerData.address.line1,
-        address_line2: customerData.address.line2 || undefined,
-        city: customerData.address.city,
-        postal_code: customerData.address.postcode,
-        region: customerData.address.state || undefined,
         language: 'en' // Default to English
       };
+
+      // Only include address fields if they have actual values
+      if (customerData.address) {
+        const hasAddressData = customerData.address.line1 || 
+                              customerData.address.line2 || 
+                              customerData.address.city || 
+                              customerData.address.postcode || 
+                              customerData.address.state;
+
+        if (hasAddressData) {
+          // Only include address fields if we have the required fields
+          if (customerData.address.line1 && customerData.address.postcode) {
+            updatePayload.address_line1 = customerData.address.line1;
+            updatePayload.address_line2 = customerData.address.line2 || undefined;
+            updatePayload.city = customerData.address.city || undefined;
+            updatePayload.postal_code = customerData.address.postcode;
+            updatePayload.region = customerData.address.state || undefined;
+          } else {
+            console.log('Skipping address update - missing required fields (line1 or postcode)');
+          }
+        } else {
+          console.log('Skipping address update - no address data provided');
+        }
+      }
 
       console.log('Updating GoCardless customer with payload:', updatePayload);
 

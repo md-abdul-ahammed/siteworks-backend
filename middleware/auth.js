@@ -47,6 +47,7 @@ const verifyToken = async (req, res, next) => {
         city: true,
         postcode: true,
         state: true,
+        role: true,
         isVerified: true,
         isActive: true,
         lastLoginAt: true
@@ -57,6 +58,13 @@ const verifyToken = async (req, res, next) => {
       throw new AuthError('Customer not found', 401);
     }
 
+    // For admin users, skip verification and active checks
+    if (customer.role === 'admin') {
+      req.user = customer;
+      return next();
+    }
+
+    // For regular users, check verification and active status
     if (!customer.isActive) {
       throw new AuthError('Customer account is deactivated', 401);
     }

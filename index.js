@@ -20,6 +20,8 @@ const prisma = new PrismaClient({
 // Database connection management
 let isConnected = false;
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 const connectDatabase = async () => {
   try {
     await prisma.$connect();
@@ -29,6 +31,26 @@ const connectDatabase = async () => {
     isConnected = false;
     console.warn('⚠️ Database connection failed:', error.message);
     console.log('📝 You can set up the database later using: npx prisma db push');
+  }
+};
+
+// Warm-up the connection (useful with PgBouncer) so the first request doesn't fail
+const warmupDatabase = async (maxRetries = 5, delayMs = 500) => {
+  for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
+    try {
+      // Small, cheap query to ensure pool is ready
+      await prisma.$queryRaw`SELECT 1`;
+      console.log('🔥 Database warm-up successful');
+      return true;
+    } catch (err) {
+      console.warn(`⏳ Warm-up attempt ${attempt} failed: ${err.message}`);
+      if (attempt < maxRetries) {
+        await sleep(delayMs * attempt); // backoff
+      } else {
+        console.error('❌ Database warm-up failed after retries');
+        return false;
+      }
+    }
   }
 };
 
@@ -49,7 +71,7 @@ const reconnectDatabase = async () => {
 };
 
 // Initial connection
-connectDatabase();
+connectDatabase().then(() => warmupDatabase());
 
 // Handle process termination
 process.on('beforeExit', async () => {
@@ -88,6 +110,7 @@ const customerRoutes = require('./routes/customer');
 const billingRoutes = require('./routes/billing');
 const webhookRoutes = require('./routes/webhooks');
 const dashboardRoutes = require('./routes/dashboard');
+const adminRoutes = require('./routes/admin');
 
 const app = express();
 const PORT = process.env.PORT || 8000;
@@ -174,6 +197,7 @@ app.use('/api/customers', customerRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Check email existence endpoint
 app.post('/api/check-email', async (req, res, next) => {

@@ -102,7 +102,7 @@ const validateCustomerRegistration = [
       });
       
       if (existingCustomer) {
-        throw new Error('Phone number is already registered by another user');
+        throw new Error('Phone number is already exist');
       }
       
       return true;
@@ -223,7 +223,7 @@ router.post('/register',
         });
 
         if (existingCustomer) {
-          throw new Error('Customer with this email already exists');
+          throw new Error(' Email already exists');
         }
 
         // Hash password
@@ -244,6 +244,7 @@ router.post('/register',
             city,
             postcode,
             state,
+            role: 'user', // Default role for new customers
             isVerified: true, // Auto-verify for now, can be changed to false for email verification
             isActive: true
           },
@@ -466,12 +467,157 @@ router.post('/register',
               <meta name="viewport" content="width=device-width, initial-scale=1.0">
               <title>Welcome to SiteWorks</title>
               <style>
-                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-                .header { background-color: #f8f9fa; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
-                .content { background-color: #ffffff; padding: 30px; border: 1px solid #e9ecef; }
-                .button { display: inline-block; background-color: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
-                .footer { background-color: #f8f9fa; padding: 20px; text-align: center; border-radius: 0 0 8px 8px; font-size: 14px; color: #6c757d; }
+                body { 
+                  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; 
+                  line-height: 1.6; 
+                  color: #2d3748; 
+                  background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+                  margin: 0;
+                  padding: 20px;
+                  min-height: 100vh;
+                }
+                .container { 
+                  max-width: 600px; 
+                  margin: 0 auto; 
+                  background-color: #ffffff;
+                  border-radius: 12px;
+                  overflow: hidden;
+                  box-shadow: 0 10px 25px rgba(0,0,0,0.08), 0 4px 10px rgba(0,0,0,0.04);
+                  border: 1px solid #e2e8f0;
+                }
+                .header { 
+                  background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
+                  padding: 35px 25px; 
+                  text-align: center; 
+                  color: #ffffff;
+                  position: relative;
+                }
+                .header::before {
+                  content: '';
+                  position: absolute;
+                  top: 0;
+                  left: 0;
+                  right: 0;
+                  height: 3px;
+                  background: linear-gradient(90deg, #4299e1, #667eea, #764ba2);
+                }
+                .header h1 {
+                  margin: 0;
+                  font-size: 26px;
+                  font-weight: 700;
+                  letter-spacing: -0.5px;
+                }
+                .content { 
+                  background-color: #ffffff; 
+                  padding: 45px 35px; 
+                  color: #2d3748;
+                }
+                .greeting {
+                  font-size: 18px;
+                  font-weight: 600;
+                  margin-bottom: 20px;
+                  color: #1a202c;
+                }
+                .message-text {
+                  font-size: 16px;
+                  line-height: 1.7;
+                  margin-bottom: 15px;
+                }
+                .button { 
+                  display: inline-block; 
+                  background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
+                  color: #ffffff !important; 
+                  padding: 18px 36px; 
+                  text-decoration: none; 
+                  border-radius: 8px; 
+                  margin: 30px 0; 
+                  font-weight: 600;
+                  font-size: 16px;
+                  transition: all 0.3s ease;
+                  box-shadow: 0 4px 12px rgba(74, 85, 104, 0.3);
+                  position: relative;
+                  overflow: hidden;
+                }
+                .button::before {
+                  content: '';
+                  position: absolute;
+                  top: 0;
+                  left: -100%;
+                  width: 100%;
+                  height: 100%;
+                  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+                  transition: left 0.5s;
+                }
+                .button:hover {
+                  transform: translateY(-2px);
+                  box-shadow: 0 6px 20px rgba(74, 85, 104, 0.4);
+                }
+                .button:hover::before {
+                  left: 100%;
+                }
+                .footer { 
+                  background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
+                  padding: 30px 25px; 
+                  text-align: center; 
+                  font-size: 14px; 
+                  color: #e2e8f0;
+                  position: relative;
+                }
+                .footer::before {
+                  content: '';
+                  position: absolute;
+                  top: 0;
+                  left: 0;
+                  right: 0;
+                  height: 1px;
+                  background: linear-gradient(90deg, transparent, #a0aec0, transparent);
+                }
+                .text-center {
+                  text-align: center;
+                }
+                .welcome-features {
+                  background-color: #f7fafc;
+                  border-radius: 8px;
+                  padding: 20px;
+                  margin: 25px 0;
+                  border-left: 4px solid #4299e1;
+                }
+                .welcome-features h3 {
+                  margin: 0 0 15px 0;
+                  color: #2b6cb0;
+                  font-size: 18px;
+                }
+                .welcome-features ul {
+                  margin: 0;
+                  padding-left: 20px;
+                }
+                .welcome-features li {
+                  margin: 8px 0;
+                  color: #4a5568;
+                }
+                .signature {
+                  margin-top: 30px;
+                  padding-top: 20px;
+                  border-top: 1px solid #e2e8f0;
+                }
+                .signature strong {
+                  color: #1a202c;
+                }
+                @media (max-width: 600px) {
+                  .container {
+                    margin: 10px;
+                    border-radius: 8px;
+                  }
+                  .content {
+                    padding: 30px 20px;
+                  }
+                  .header {
+                    padding: 25px 20px;
+                  }
+                  .header h1 {
+                    font-size: 22px;
+                  }
+                }
               </style>
             </head>
             <body>
@@ -480,19 +626,32 @@ router.post('/register',
                   <h1>Welcome to SiteWorks!</h1>
                 </div>
                 <div class="content">
-                  <p>Hello ${customerName},</p>
+                  <p class="greeting">Hello ${customerName},</p>
                   
-                  <p>Welcome to SiteWorks! We're excited to have you on board.</p>
+                  <p class="message-text">Welcome to SiteWorks! We're excited to have you on board.</p>
                   
-                  <p>Your account has been successfully created and you can now access all our services.</p>
+                  <p class="message-text">Your account has been successfully created and you can now access all our services.</p>
                   
-                  <div style="text-align: center;">
-                    <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard" class="button">Access Your Dashboard</a>
+                  <div class="text-center">
+                    <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard" class="button">🚀 Access Your Dashboard</a>
                   </div>
                   
-                  <p>If you have any questions or need assistance, please don't hesitate to contact our support team.</p>
+                  <div class="welcome-features">
+                    <h3>✨ What you can do with your SiteWorks account:</h3>
+                    <ul>
+                      <li>📊 Manage your billing and payments</li>
+                      <li>📈 Track your service usage</li>
+                      <li>🎯 Access customer support</li>
+                      <li>👤 Update your profile information</li>
+                      <li>🔔 Get notifications about your services</li>
+                    </ul>
+                  </div>
                   
-                  <p>Best regards,<br>The SiteWorks Team</p>
+                  <p class="message-text">If you have any questions or need assistance, please don't hesitate to contact our support team.</p>
+                  
+                  <div class="signature">
+                    <p>Best regards,<br><strong>The SiteWorks Team</strong></p>
+                  </div>
                 </div>
                 <div class="footer">
                   <p>This is an automated message, please do not reply directly to this email.</p>
@@ -537,9 +696,9 @@ router.post('/register',
       console.log('Response sent successfully');
 
     } catch (error) {
-      if (error.message === 'Customer with this email already exists') {
+      if (error.message === ' Email already exists') {
         return res.status(409).json({
-          error: 'Customer with this email already exists',
+          error: ' Email already exists',
           code: 'CUSTOMER_EXISTS'
         });
       }
@@ -590,6 +749,51 @@ router.post('/validate-bank-details',
         suggestions: bankValidationResult.suggestions,
         formattedBankCode: bankValidationService.formatBankCode(bankCode, countryCode),
         maskedAccountNumber: bankValidationService.maskAccountNumber(accountNumber)
+      });
+
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// Email validation endpoint
+router.post('/validate-email',
+  rateLimiter(60 * 1000, 30), // 30 requests per minute
+  [
+    body('email').isEmail().withMessage('Please enter a valid email address')
+  ],
+  async (req, res, next) => {
+    try {
+      // Check for validation errors
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          details: errors.array(),
+          code: 'VALIDATION_ERROR'
+        });
+      }
+
+      const { email } = req.body;
+
+      // Check if email already exists
+      const existingCustomer = await prisma.customer.findUnique({
+        where: { email }
+      });
+
+      if (existingCustomer) {
+        return res.status(409).json({
+          error: ' Email already exists',
+          code: 'CUSTOMER_EXISTS'
+        });
+      }
+
+      // Return success if email is available
+      res.json({
+        success: true,
+        message: 'Email is available',
+        code: 'EMAIL_AVAILABLE'
       });
 
     } catch (error) {
@@ -665,6 +869,7 @@ router.post('/signin',
         city: customer.city,
         postcode: customer.postcode,
         state: customer.state,
+        role: customer.role,
         isVerified: customer.isVerified,
         isActive: customer.isActive,
         lastLoginAt: customer.lastLoginAt,
@@ -714,6 +919,7 @@ router.get('/profile',
           city: true,
           postcode: true,
           state: true,
+          role: true,
           isVerified: true,
           isActive: true,
           lastLoginAt: true,
@@ -802,8 +1008,23 @@ router.post('/refresh',
       // Verify refresh token
       const decoded = await verifyRefreshToken(refreshToken);
       
+      if (!decoded) {
+        return res.status(401).json({
+          error: 'Invalid or expired refresh token',
+          code: 'INVALID_REFRESH_TOKEN'
+        });
+      }
+
+      // Check if user is still active
+      if (!decoded.customer.isActive) {
+        return res.status(401).json({
+          error: 'Account is deactivated',
+          code: 'ACCOUNT_DEACTIVATED'
+        });
+      }
+      
       // Generate new token pair
-      const tokens = await generateTokenPair(decoded.customerId);
+      const tokens = await generateTokenPair(decoded.customer.id);
 
       res.json({
         success: true,
@@ -876,12 +1097,163 @@ router.post('/forgot-password',
               <meta name="viewport" content="width=device-width, initial-scale=1.0">
               <title>Password Reset - SiteWorks</title>
               <style>
-                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-                .header { background-color: #f8f9fa; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
-                .content { background-color: #ffffff; padding: 30px; border: 1px solid #e9ecef; }
-                .button { display: inline-block; background-color: #dc3545; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
-                .footer { background-color: #f8f9fa; padding: 20px; text-align: center; border-radius: 0 0 8px 8px; font-size: 14px; color: #6c757d; }
+                body { 
+                  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; 
+                  line-height: 1.6; 
+                  color: #2d3748; 
+                  background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+                  margin: 0;
+                  padding: 20px;
+                  min-height: 100vh;
+                }
+                .container { 
+                  max-width: 600px; 
+                  margin: 0 auto; 
+                  background-color: #ffffff;
+                  border-radius: 12px;
+                  overflow: hidden;
+                  box-shadow: 0 10px 25px rgba(0,0,0,0.08), 0 4px 10px rgba(0,0,0,0.04);
+                  border: 1px solid #e2e8f0;
+                }
+                .header { 
+                  background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
+                  padding: 35px 25px; 
+                  text-align: center; 
+                  color: #ffffff;
+                  position: relative;
+                }
+                .header::before {
+                  content: '';
+                  position: absolute;
+                  top: 0;
+                  left: 0;
+                  right: 0;
+                  height: 3px;
+                  background: linear-gradient(90deg, #4299e1, #667eea, #764ba2);
+                }
+                .header h1 {
+                  margin: 0;
+                  font-size: 26px;
+                  font-weight: 700;
+                  letter-spacing: -0.5px;
+                }
+                .content { 
+                  background-color: #ffffff; 
+                  padding: 45px 35px; 
+                  color: #2d3748;
+                }
+                .greeting {
+                  font-size: 18px;
+                  font-weight: 600;
+                  margin-bottom: 20px;
+                  color: #1a202c;
+                }
+                .message-text {
+                  font-size: 16px;
+                  line-height: 1.7;
+                  margin-bottom: 15px;
+                }
+                .button { 
+                  display: inline-block; 
+                  background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
+                  color: #ffffff !important; 
+                  padding: 18px 36px; 
+                  text-decoration: none; 
+                  border-radius: 8px; 
+                  margin: 30px 0; 
+                  font-weight: 600;
+                  font-size: 16px;
+                  transition: all 0.3s ease;
+                  box-shadow: 0 4px 12px rgba(74, 85, 104, 0.3);
+                  position: relative;
+                  overflow: hidden;
+                }
+                .button::before {
+                  content: '';
+                  position: absolute;
+                  top: 0;
+                  left: -100%;
+                  width: 100%;
+                  height: 100%;
+                  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+                  transition: left 0.5s;
+                }
+                .button:hover {
+                  transform: translateY(-2px);
+                  box-shadow: 0 6px 20px rgba(74, 85, 104, 0.4);
+                }
+                .button:hover::before {
+                  left: 100%;
+                }
+                .footer { 
+                  background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
+                  padding: 30px 25px; 
+                  text-align: center; 
+                  font-size: 14px; 
+                  color: #e2e8f0;
+                  position: relative;
+                }
+                .footer::before {
+                  content: '';
+                  position: absolute;
+                  top: 0;
+                  left: 0;
+                  right: 0;
+                  height: 1px;
+                  background: linear-gradient(90deg, transparent, #a0aec0, transparent);
+                }
+                .text-center {
+                  text-align: center;
+                }
+                .warning-text {
+                  color: #e53e3e;
+                  font-weight: 600;
+                  background-color: #fed7d7;
+                  padding: 12px 16px;
+                  border-radius: 6px;
+                  border-left: 4px solid #e53e3e;
+                  margin: 20px 0;
+                }
+                .important-note {
+                  background-color: #fef5e7;
+                  border: 1px solid #f6ad55;
+                  border-radius: 6px;
+                  padding: 15px 20px;
+                  margin: 20px 0;
+                }
+                .important-note strong {
+                  color: #c05621;
+                }
+                .signature {
+                  margin-top: 30px;
+                  padding-top: 20px;
+                  border-top: 1px solid #e2e8f0;
+                }
+                .signature strong {
+                  color: #1a202c;
+                }
+                .icon {
+                  display: inline-block;
+                  width: 20px;
+                  height: 20px;
+                  margin-right: 8px;
+                  vertical-align: middle;
+                }
+                @media (max-width: 600px) {
+                  .container {
+                    margin: 10px;
+                    border-radius: 8px;
+                  }
+                  .content {
+                    padding: 30px 20px;
+                  }
+                  .header {
+                    padding: 25px 20px;
+                  }
+                  .header h1 {
+                    font-size: 22px;
+                  }
+                }
               </style>
             </head>
             <body>
@@ -890,21 +1262,27 @@ router.post('/forgot-password',
                   <h1>Password Reset Request</h1>
                 </div>
                 <div class="content">
-                  <p>Hello ${customerName},</p>
+                  <p class="greeting">Hello ${customerName},</p>
                   
-                  <p>We received a request to reset your password for your SiteWorks account.</p>
+                  <p class="message-text">We received a request to reset your password for your SiteWorks account.</p>
                   
-                  <p>If you didn't make this request, you can safely ignore this email.</p>
-                  
-                  <div style="text-align: center;">
-                    <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}" class="button">Reset Password</a>
+                  <div class="warning-text">
+                    <strong>⚠️ Security Notice:</strong> If you didn't make this request, you can safely ignore this email.
                   </div>
                   
-                  <p>This link will expire in 1 hour for security reasons.</p>
+                  <div class="text-center">
+                    <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken.token}" class="button">🔐 Reset Password</a>
+                  </div>
                   
-                  <p>If you have any questions, please contact our support team.</p>
+                  <div class="important-note">
+                    <strong>⏰ Important:</strong> This link will expire in 1 hour for security reasons.
+                  </div>
                   
-                  <p>Best regards,<br>The SiteWorks Team</p>
+                  <p class="message-text">If you have any questions, please contact our support team.</p>
+                  
+                  <div class="signature">
+                    <p>Best regards,<br><strong>The SiteWorks Team</strong></p>
+                  </div>
                 </div>
                 <div class="footer">
                   <p>This is an automated message, please do not reply directly to this email.</p>
